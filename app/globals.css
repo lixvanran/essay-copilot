@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  background: #f7f7f5;
+  color: #25251f;
+}
+
+.essay-text {
+  font-family: 'Source Han Serif SC', 'Songti SC', 'Songti TC', 'SimSun', serif;
+  line-height: 1.9;
+  letter-spacing: 0.02em;
+}
+
+.essay-text p {
+  margin-bottom: 1em;
+  text-indent: 2em;
+}
