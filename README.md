@@ -1,8 +1,13 @@
-# Zuowen Co-Pilot (作文副驾驶) · v0.3.1 MVP
+# Essay Co-Pilot (作文副驾驶) · v0.1.0 MVP
 
 > Not "write the best", but "write the most like you".
 
+AI essay writing that mimics **YOUR** style — not generic AI style.
+
 通过文风指纹技术，让 AI 写出**完全像你本人**的作文，规避反 AI 检测。
+
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![GitHub](https://img.shields.io/badge/GitHub-lixvanran%2Fessay--copilot-black.svg)](https://github.com/lixvanran/essay-copilot)
 
 **国区 OpenRouter 优化**：默认走国产模型（DeepSeek V3 / Qwen），国区账户也能用。
 
@@ -107,4 +112,9 @@ v0.1 阶段：
 
 ## 协议
 
-MIT
+[MIT](LICENSE) © 2026 [lixvanran](https://github.com/lixvanran)
+
+## 链接
+
+- GitHub: https://github.com/lixvanran/essay-copilot
+- 报告问题: https://github.com/lixvanran/essay-copilot/issues
