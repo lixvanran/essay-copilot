@@ -1,10 +1,10 @@
-# Essay Co-Pilot (作文副驾驶) · v0.1.0 MVP
+# 作文副驾驶 · v0.1.0 MVP
 
 > Not "write the best", but "write the most like you".
 
 AI essay writing that mimics **YOUR** style — not generic AI style.
 
-通过文风指纹技术，让 AI 写出**完全像你本人**的作文，规避反 AI 检测。
+通过提取你的文风，注入Agent的prompt‌(后期升级为RAG)，让 AI 写出**完全像你本人**的作文，规避反 AI 检测。
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-lixvanran%2Fessay--copilot-black.svg)](https://github.com/lixvanran/essay-copilot)
