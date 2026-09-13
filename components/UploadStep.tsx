@@ -2,9 +2,10 @@
 
 import { useState, useRef } from 'react';
 import type { StyleDNA } from '@/lib/style-dna';
+import type { StyleProfile } from '@/lib/style-extractor';
 
 type Props = {
-  onAnalyzed: (dna: StyleDNA, samples: string[]) => void;
+  onAnalyzed: (data: { dna: StyleDNA; profile: StyleProfile | null; profileError: string | null; samples: string[] }) => void;
 };
 
 const DEMO_SAMPLES = [
@@ -123,13 +124,30 @@ export default function UploadStep({ onAnalyzed }: Props) {
         body: JSON.stringify({ samples: texts })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '分析失败');
-      onAnalyzed(data.dna, texts);
+      if (!res.ok) throw new Error(friendlyError(data.error));
+      onAnalyzed({
+        dna: data.dna,
+        profile: data.profile || null,
+        profileError: data.profileError || null,
+        samples: texts
+      });
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 把后端错误转成中文友好提示
+  const friendlyError = (msg?: string): string => {
+    if (!msg) return '分析失败';
+    if (/OPENROUTER_API_KEY/.test(msg)) {
+      return '需要 OpenRouter Key 才能提取风格画像。请展开下方"OpenRouter API Key"设置填入。';
+    }
+    if (/at least 100 characters/.test(msg)) {
+      return '每篇范文至少 100 字';
+    }
+    return msg;
   };
 
   const loadDemo = () => {

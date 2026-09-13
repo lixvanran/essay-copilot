@@ -1,15 +1,32 @@
-# 作文副驾驶 · v0.1.0 MVP
+# 作文副驾驶 · v0.2.0
 
 > Not "write the best", but "write the most like you".
 
 AI essay writing that mimics **YOUR** style — not generic AI style.
 
-通过提取你的文风，注入Agent的prompt‌(后期升级为RAG)，让 AI 写出**完全像你本人**的作文，规避反 AI 检测。
+通过提取你的文风，注入 Agent 的 prompt（后期升级为 RAG），让 AI 写出**完全像你本人**的作文，规避反 AI 检测。
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-lixvanran%2Fessay--copilot-black.svg)](https://github.com/lixvanran/essay-copilot)
 
-**国区 OpenRouter 优化**：默认走国产模型（DeepSeek V3 / Qwen），国区账户也能用。
+**国区 OpenRouter 优化**：默认走国产模型（Kimi K2 / DeepSeek V3 / Qwen），国区账户也能用。
+
+---
+
+## v0.2.0 重大升级
+
+| 模块 | v0.1.0 | v0.2.0 |
+|---|---|---|
+| **分词** | 简单双字切分（噪声大） | **jieba-wasm 真实分词** |
+| **风格提取** | 纯规则 | **规则 + LLM 风格画像**（质化+量化） |
+| **功能词** | 无 | 提取**真实的连词/语气词/副词**（jieba 词表） |
+| **生成模式** | 单模型 | **多采样 / 多模型对比（DeepSeek+Qwen+Kimi）/ 单篇** |
+| **实测试** | 13 分 | **Kimi 18 分 · Qwen 30 · DeepSeek 37** |
+| **复制/下载** | 无 | 一键复制 + 下载 .txt |
+| **错误提示** | 技术性 | 友好化（余额不足/Key 错误/限流 都有明确指引） |
+| **加载状态** | 死板 spinner | 进度文字 + 旋转图标 |
+
+**v0.2.0 核心**：**LLM 风格画像 + jieba 真实分词** —— 文风模仿的两大引擎都装上了。
 
 ---
 
@@ -47,9 +64,12 @@ node start.js
 
 ## 三步使用流程
 
-1. **上传范文**（3-10 篇你过去的作文）
-2. **生成作文**（输入题目，AI 用你的文风写）
-3. **查看结果**（带 AI 痕迹评分 + 可疑句标红）
+1. **上传范文**（1-10 篇你过去的作文）— 自动用 jieba 提取分词 + LLM 提取风格画像
+2. **生成作文**（输入题目，选生成模式）
+   - **多采样**：1 个模型生成 3 篇，挑 AI 味最低的
+   - **多模型对比**：DeepSeek / Qwen / Kimi 同时跑，挑最佳的（推荐）
+   - **单篇**：最快
+3. **查看结果**（AI 痕迹评分 + 可疑句标红 + 一键复制/下载）
 
 ---
 
@@ -104,11 +124,12 @@ OPENROUTER_API_KEY=sk-or-v1-你的key
 
 ## 隐私
 
-v0.1 阶段：
-- 不保存任何数据
+v0.2 阶段：
+- 不保存任何数据到磁盘
 - 不做用户系统
 - 范文仅在内存中处理，刷新即丢
 - LLM 调用直接到 OpenRouter，不经过中间存储
+- **风格画像有内存缓存**（同进程内相同范文不重复调 LLM），重启即清空
 
 ## 协议
 

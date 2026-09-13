@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractStyleDNA } from '@/lib/style-dna';
+import { extractStyleProfile } from '@/lib/style-extractor';
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,8 +17,26 @@ export async function POST(req: NextRequest) {
     if (samples.some((s: any) => typeof s !== 'string' || s.trim().length < 100)) {
       return NextResponse.json({ error: 'Each sample must be at least 100 characters' }, { status: 400 });
     }
+
+    // 1. 规则量化 DNA
     const dna = extractStyleDNA(samples);
-    return NextResponse.json({ dna });
+
+    // 2. LLM 风格画像（异步调，需要 API key）
+    const apiKey = body?.apiKey || process.env.OPENROUTER_API_KEY;
+    let profile = null;
+    let profileError = null;
+    if (apiKey && !/your-key-here|placeholder|xxx/i.test(apiKey)) {
+      try {
+        profile = await extractStyleProfile(samples, apiKey, {
+          model: body?.profileModel  // 可选覆盖
+        });
+      } catch (e: any) {
+        profileError = e.message;
+        console.error('[analyze] LLM profile extraction failed:', e.message);
+      }
+    }
+
+    return NextResponse.json({ dna, profile, profileError });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 });
   }

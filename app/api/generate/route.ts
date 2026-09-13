@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateEssay, generateBestEssay } from '@/lib/llm';
 import { scoreAITrace } from '@/lib/ai-detector';
 import type { StyleDNA } from '@/lib/style-dna';
+import type { StyleProfile } from '@/lib/style-extractor';
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,6 +13,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid or empty JSON body' }, { status: 400 });
     }
     const dna: StyleDNA = body.dna;
+    const profile: StyleProfile | null = body.profile || null;
     const topic: string = body.topic;
     const requirements: string | undefined = body.requirements;
     const targetLength: number | undefined = body.targetLength;
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
     if (multiSample) {
       // 多采样挑 AI 味最低的
       const { best, all } = await generateBestEssay({
-        dna, topic, requirements, targetLength, model, apiKey,
+        dna, profile, topic, requirements, targetLength, model, apiKey,
         attempts: body.attempts || 3,
         scorer: (essay) => -scoreAITrace(essay, dna).total
       });
@@ -48,7 +50,7 @@ export async function POST(req: NextRequest) {
         alternatives: allScores
       });
     } else {
-      const result = await generateEssay({ dna, topic, requirements, targetLength, model, apiKey });
+      const result = await generateEssay({ dna, profile, topic, requirements, targetLength, model, apiKey });
       const aiScore = scoreAITrace(result.essay, dna);
       return NextResponse.json({ result: { ...result, aiScore } });
     }

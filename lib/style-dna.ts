@@ -1,11 +1,14 @@
 /**
- * 文风 DNA 提取器（v3 — 聚焦"语言习惯"而非"主题词"）
+ * 文风 DNA 提取器（v4 — jieba 真实分词 + LLM 风格画像）
  *
  * 核心设计原则：
  * - 主题词（"贫富/枪毙"）随题目变，无价值 → 不提取
  * - 表达习惯（句式/修辞/视角/语气/标点/节奏）跨题目稳定 → 重点提取
  * - LLM 模仿的是"怎么讲"，不是"讲什么"
+ * - v4: jieba 替代粗糙双字切分，提取真实词边界
  */
+
+import { tokenize, isChineseStopWord, classifyWord } from './jieba-helper';
 
 export type StyleDNA = {
   sampleCount: number;
@@ -72,8 +75,12 @@ export type StyleDNA = {
   toneScore: number;            // -1~1
   formalityScore: number;        // 0~1
 
-  // 词汇丰富度（保留，纯结构特征）
+  // 词汇丰富度（jieba 真实分词 — 替代粗糙双字切分）
   vocabRichness: number;
+  vocabDiversity: number;       // 真实词类数 / 总词数
+
+  // 高频功能词（jieba 提取，反映表达习惯 — 这才是 HOW）
+  topFunctionalWords: { word: string; pos: string; freq: number }[];
 
   // 常用连接词（保留，反映逻辑展开方式）
   topConnectives: { word: string; freq: number }[];
@@ -359,16 +366,61 @@ function analyzeConnectives(text: string): { word: string; freq: number }[] {
 }
 
 /**
- * 词汇丰富度（粗略）
+ * 词汇丰富度（jieba 真实分词）
  */
-function calcVocabRichness(text: string): number {
-  const cleaned = text.replace(/[\s\p{P}]+/gu, '');
-  const chars: string[] = [];
-  for (let i = 0; i < cleaned.length; i += 2) {
-    chars.push(cleaned.slice(i, i + 2));
+function calcVocabRichness(text: string): { richness: number; diversity: number } {
+  const words = tokenize(text);
+  if (words.length === 0) return { richness: 0, diversity: 0 };
+
+  const unique = new Set(words);
+  return {
+    richness: unique.size / words.length,    // TTR (Type-Token Ratio)
+    diversity: unique.size / Math.sqrt(words.length)  // 平方根倒数，避免文本越长 TTR 越低
+  };
+}
+
+/**
+ * 高频功能词提取（jieba 分词 + 词表分类）
+ * 这是 v4 的核心：用真实的功能词代替之前的主题词
+ */
+function analyzeFunctionalWords(text: string): { word: string; pos: string; freq: number }[] {
+  const words = tokenize(text);
+
+  // 统计功能词频次（排除停用词）
+  const counts: Record<string, { pos: string; count: number }> = {};
+  for (const word of words) {
+    // 跳过停用词
+    if (isChineseStopWord(word)) continue;
+    // 跳过纯数字
+    if (/^\d+$/.test(word)) continue;
+    // 太短或太长都不算
+    if (word.length < 1 || word.length > 6) continue;
+
+    const cls = classifyWord(word);
+    // 只保留功能词（连词/语气词/副词/代词/介词/助词）
+    if (cls === 'content') continue;
+
+    if (!counts[word]) counts[word] = { pos: cls, count: 0 };
+    counts[word].count++;
   }
-  if (chars.length === 0) return 0;
-  return new Set(chars).size / chars.length;
+
+  return Object.entries(counts)
+    .filter(([_, v]) => v.count >= 2)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 12)
+    .map(([word, v]) => ({ word, pos: posLabel(v.pos), freq: v.count }));
+}
+
+/**
+ * 词性缩写 → 中文标签（喂给 LLM 看）
+ */
+function posLabel(cls: string): string {
+  const map: Record<string, string> = {
+    conjunction: '连词', modal: '语气词', adverb: '副词',
+    pronoun: '代词', preposition: '介词', auxiliary: '助词',
+    content: '实词'
+  };
+  return map[cls] || cls;
 }
 
 /**
@@ -422,7 +474,8 @@ export function extractStyleDNA(samples: string[]): StyleDNA {
   // 语气 / 词汇
   const toneScore = calcToneScore(fullText);
   const formalityScore = calcFormalityScore(fullText);
-  const vocabRichness = calcVocabRichness(fullText);
+  const { richness: vocabRichness, diversity: vocabDiversity } = calcVocabRichness(fullText);
+  const topFunctionalWords = analyzeFunctionalWords(fullText);
   const topConnectives = analyzeConnectives(fullText);
 
   // Few-shot 段落
@@ -471,6 +524,8 @@ export function extractStyleDNA(samples: string[]): StyleDNA {
     toneScore: Math.round(toneScore * 100) / 100,
     formalityScore: Math.round(formalityScore * 100) / 100,
     vocabRichness: Math.round(vocabRichness * 1000) / 1000,
+    vocabDiversity: Math.round(vocabDiversity * 100) / 100,
+    topFunctionalWords,
     topConnectives,
     fingerprintParagraphs,
     fingerprint
@@ -551,6 +606,17 @@ export function dnaToStyleDescription(dna: StyleDNA): string {
   // 连接词
   if (dna.topConnectives.length > 0) {
     lines.push(`- 常用连接词：${dna.topConnectives.slice(0, 5).map(c => c.word).join('、')}`);
+  }
+
+  // 高频功能词（jieba 词性标注 — v4 核心：用真实语言习惯，不用主题词）
+  if (dna.topFunctionalWords && dna.topFunctionalWords.length > 0) {
+    const items = dna.topFunctionalWords.slice(0, 8).map(w => `${w.word}(${w.pos})×${w.freq}`);
+    lines.push(`- 高频功能词（用 jieba 词性标注提取，反映真实表达习惯）：${items.join('、')}`);
+  }
+
+  // 词汇丰富度（jieba 真实分词）
+  if (dna.vocabDiversity) {
+    lines.push(`- 词汇丰富度：${dna.vocabRichness.toFixed(3)} (TTR) / ${dna.vocabDiversity.toFixed(1)} (Diversity)`);
   }
 
   return lines.join('\n');

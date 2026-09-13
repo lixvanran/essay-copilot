@@ -5,8 +5,10 @@ export default function Header({ onReset }: Props) {
     <header className="border-b border-ink-100 bg-white/80 backdrop-blur sticky top-0 z-10">
       <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            作文副驾驶 <span className="text-ink-400 font-normal text-sm">· Style Co-Pilot</span>
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
+            作文副驾驶
+            <span className="text-ink-400 font-normal text-sm">· Style Co-Pilot</span>
+            <span className="text-[10px] text-ink-400 border border-ink-200 rounded px-1.5 py-0.5 font-mono">v0.2.0</span>
           </h1>
           <p className="text-xs text-ink-400 mt-0.5">不是写得最好，而是写得最像你</p>
         </div>

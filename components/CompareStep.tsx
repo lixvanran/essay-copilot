@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useCallback } from 'react';
 import type { StyleDNA } from '@/lib/style-dna';
 import type { AITraceScore } from '@/lib/ai-detector';
 
@@ -11,8 +12,17 @@ type Props = {
     aiScore: AITraceScore;
     durationMs: number;
   };
+  alternatives?: GenerateResult[];
   onRegenerate: () => void;
   onRestart: () => void;
+  onPickAlternative?: (idx: number) => void;
+};
+
+type GenerateResult = {
+  essay: string;
+  model: string;
+  aiScore: AITraceScore;
+  durationMs: number;
 };
 
 const LEVEL_LABEL: Record<AITraceScore['level'], string> = {
@@ -23,51 +33,113 @@ const LEVEL_LABEL: Record<AITraceScore['level'], string> = {
 };
 
 const LEVEL_COLOR: Record<AITraceScore['level'], string> = {
-  'human-like': 'text-emerald-600 bg-emerald-50',
-  'slight-ai': 'text-amber-600 bg-amber-50',
-  'obvious-ai': 'text-orange-600 bg-orange-50',
-  'heavy-ai': 'text-red-600 bg-red-50'
+  'human-like': 'text-emerald-600 bg-emerald-50 border-emerald-200',
+  'slight-ai': 'text-amber-600 bg-amber-50 border-amber-200',
+  'obvious-ai': 'text-orange-600 bg-orange-50 border-orange-200',
+  'heavy-ai': 'text-red-600 bg-red-50 border-red-200'
 };
 
-export default function CompareStep({ dna, result, onRegenerate, onRestart }: Props) {
-  const score = result.aiScore;
-  const flaggedSet = new Set(score.flaggedSentences.map(f => f.sentence));
+export default function CompareStep({
+  dna, result, alternatives = [], onRegenerate, onRestart, onPickAlternative
+}: Props) {
+  const [copied, setCopied] = useState(false);
 
-  // 把作文按句切，标红可疑句
-  const sentences = result.essay.split(/(?<=[。！？!?；;])/g).filter(s => s.trim().length > 0);
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(result.essay);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // 兜底：使用 document.execCommand
+      const ta = document.createElement('textarea');
+      ta.value = result.essay;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [result.essay]);
+
+  const handleDownload = useCallback(() => {
+    const blob = new Blob([result.essay], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `essay-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [result.essay]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-4">
         <div className="bg-white rounded-2xl p-8 shadow-sm border border-ink-100">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 className="text-lg font-semibold">生成的作文</h2>
-            <div className="flex items-center gap-2 text-xs text-ink-400">
-              <span>{result.model}</span>
+            <div className="flex items-center gap-3 text-xs text-ink-400">
+              <span className="font-mono">{result.model.split('/').pop()}</span>
               <span>·</span>
               <span>{(result.durationMs / 1000).toFixed(1)}s</span>
             </div>
           </div>
+
           <div className="essay-text text-ink-800">
-            {sentences.map((s, i) => {
-              const trimmed = s.trim();
-              const flagged = flaggedSet.has(trimmed);
-              const flagInfo = score.flaggedSentences.find(f => f.sentence === trimmed);
-              return (
-                <span
-                  key={i}
-                  className={flagged ? 'bg-red-100/60 rounded px-0.5' : ''}
-                  title={flagInfo ? flagInfo.reason : undefined}
-                >
-                  {s}
-                </span>
-              );
-            })}
+            <HighlightedEssay essay={result.essay} flaggedSentences={result.aiScore.flaggedSentences} />
           </div>
-          <div className="mt-6 pt-4 border-t border-ink-100 text-xs text-ink-400">
-            总字数 {result.essay.length} · 标红处为 AI 痕迹可疑句（hover 查看原因）
+
+          <div className="mt-6 pt-4 border-t border-ink-100 flex items-center justify-between flex-wrap gap-3">
+            <div className="text-xs text-ink-400">
+              {result.essay.length} 字 · 标红处为 AI 痕迹可疑句（hover 查看原因）
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCopy}
+                className={`px-3 py-1.5 rounded-lg text-xs transition border ${
+                  copied
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'border-ink-200 hover:bg-ink-50 text-ink-700'
+                }`}
+              >
+                {copied ? '✓ 已复制' : '📋 复制全文'}
+              </button>
+              <button
+                onClick={handleDownload}
+                className="px-3 py-1.5 rounded-lg text-xs border border-ink-200 hover:bg-ink-50 text-ink-700 transition"
+              >
+                💾 下载 .txt
+              </button>
+            </div>
           </div>
         </div>
+
+        {alternatives.length > 0 && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-ink-100">
+            <h3 className="text-sm font-medium text-ink-700 mb-3">
+              其他版本（{alternatives.length}） · 分数越低越像你
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {alternatives.map((alt, i) => (
+                <button
+                  key={i}
+                  onClick={() => onPickAlternative?.(i)}
+                  className="text-left p-3 border border-ink-200 rounded-lg hover:border-ink-400 hover:bg-ink-50 transition"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-mono text-ink-500">{alt.model.split('/').pop()}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded border ${LEVEL_COLOR[alt.aiScore.level]}`}>
+                      {alt.aiScore.total} 分
+                    </span>
+                  </div>
+                  <div className="text-xs text-ink-600 line-clamp-4 leading-relaxed">
+                    {alt.essay.slice(0, 120)}...
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button
@@ -86,53 +158,46 @@ export default function CompareStep({ dna, result, onRegenerate, onRestart }: Pr
       </div>
 
       <div className="space-y-4">
-        <ScoreGauge score={score} />
-
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-ink-100">
-          <h3 className="text-sm font-medium text-ink-700 mb-3">信号明细</h3>
-          <div className="space-y-2 text-sm">
-            <SignalBar label="AI 高频词" value={score.signals.aiWordRatio} max={3} suffix="次/百字" invert />
-            <SignalBar label="句首重复" value={score.signals.sentenceStartRepeat} max={0.5} suffix="" invert />
-            <SignalBar label="词汇丰富度" value={score.signals.vocabRichness} max={0.6} suffix="" />
-            <SignalBar label="段落可预测" value={score.signals.structurePredictability} max={1} suffix="" invert />
-            <SignalBar label="文风匹配" value={score.signals.styleConsistency} max={1} suffix="" />
-          </div>
-          {score.signals.aiWordHits.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-ink-100">
-              <div className="text-xs text-ink-500 mb-1.5">命中的 AI 词</div>
-              <div className="flex flex-wrap gap-1">
-                {score.signals.aiWordHits.slice(0, 6).map(h => (
-                  <span key={h.word} className="text-xs px-1.5 py-0.5 bg-red-50 text-red-600 rounded">
-                    {h.word} ×{h.count}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {score.flaggedSentences.length > 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-ink-100">
-            <h3 className="text-sm font-medium text-ink-700 mb-3">可疑句（{score.flaggedSentences.length}）</h3>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {score.flaggedSentences.map((f, i) => (
-                <div key={i} className="text-xs bg-red-50/50 rounded p-2">
-                  <div className="text-ink-700">{f.sentence}</div>
-                  <div className="text-red-500 mt-1">{f.reason}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+        <ScoreGauge score={result.aiScore} />
+        <SignalsPanel score={result.aiScore} />
+        {result.aiScore.flaggedSentences.length > 0 && (
+          <FlaggedPanel sentences={result.aiScore.flaggedSentences} />
         )}
       </div>
     </div>
   );
 }
 
+function HighlightedEssay({
+  essay, flaggedSentences
+}: {
+  essay: string;
+  flaggedSentences: { sentence: string; reason: string }[];
+}) {
+  const sentences = essay.split(/(?<=[。！？!?；;])/g).filter(s => s.trim().length > 0);
+  const flaggedMap = new Map(flaggedSentences.map(f => [f.sentence, f.reason]));
+
+  return (
+    <>
+      {sentences.map((s, i) => {
+        const trimmed = s.trim();
+        const reason = flaggedMap.get(trimmed);
+        return (
+          <span
+            key={i}
+            className={reason ? 'bg-red-100/60 rounded px-0.5' : ''}
+            title={reason}
+          >
+            {s}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function ScoreGauge({ score }: { score: AITraceScore }) {
   const pct = score.total;
-  const levelClass = LEVEL_COLOR[score.level];
-  const levelLabel = LEVEL_LABEL[score.level];
   const radius = 60;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (pct / 100) * circumference;
@@ -160,8 +225,8 @@ function ScoreGauge({ score }: { score: AITraceScore }) {
           </div>
         </div>
         <div>
-          <div className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${levelClass}`}>
-            {levelLabel}
+          <div className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium border ${LEVEL_COLOR[score.level]}`}>
+            {LEVEL_LABEL[score.level]}
           </div>
           <p className="text-xs text-ink-500 mt-2 leading-relaxed">
             分数越低越像你本人写的。<br />
@@ -173,8 +238,52 @@ function ScoreGauge({ score }: { score: AITraceScore }) {
   );
 }
 
-function SignalBar({ label, value, max, suffix, invert }: {
-  label: string; value: number; max: number; suffix: string; invert?: boolean;
+function SignalsPanel({ score }: { score: AITraceScore }) {
+  const s = score.signals;
+  return (
+    <div className="bg-white rounded-2xl p-5 shadow-sm border border-ink-100">
+      <h3 className="text-sm font-medium text-ink-700 mb-3">信号明细</h3>
+      <div className="space-y-2 text-sm">
+        <SignalBar label="AI 高频词" value={s.aiWordRatio} max={3} suffix="次/百字" invert />
+        <SignalBar label="句首重复" value={s.sentenceStartRepeat} max={0.5} invert />
+        <SignalBar label="词汇丰富度" value={s.vocabRichness} max={0.6} />
+        <SignalBar label="段落可预测" value={s.structurePredictability} max={1} invert />
+        <SignalBar label="文风匹配" value={s.styleConsistency} max={1} />
+      </div>
+      {s.aiWordHits.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-ink-100">
+          <div className="text-xs text-ink-500 mb-1.5">命中的 AI 词</div>
+          <div className="flex flex-wrap gap-1">
+            {s.aiWordHits.slice(0, 6).map(h => (
+              <span key={h.word} className="text-xs px-1.5 py-0.5 bg-red-50 text-red-600 rounded">
+                {h.word} ×{h.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FlaggedPanel({ sentences }: { sentences: { sentence: string; reason: string }[] }) {
+  return (
+    <div className="bg-white rounded-2xl p-5 shadow-sm border border-ink-100">
+      <h3 className="text-sm font-medium text-ink-700 mb-3">可疑句（{sentences.length}）</h3>
+      <div className="space-y-2 max-h-64 overflow-y-auto">
+        {sentences.map((f, i) => (
+          <div key={i} className="text-xs bg-red-50/50 rounded p-2">
+            <div className="text-ink-700">{f.sentence}</div>
+            <div className="text-red-500 mt-1">{f.reason}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SignalBar({ label, value, max, suffix = '', invert }: {
+  label: string; value: number; max: number; suffix?: string; invert?: boolean;
 }) {
   const pct = Math.max(0, Math.min(1, value / max));
   const goodColor = invert ? '#10b981' : '#f59e0b';

@@ -4,6 +4,7 @@
  */
 
 import type { StyleDNA } from './style-dna';
+import type { StyleProfile } from './style-extractor';
 import type { GenerateOptions } from './prompts';
 import { buildSystemPrompt, buildUserPrompt } from './prompts';
 
@@ -56,20 +57,21 @@ export type GenerateResult = {
  * 默认走国产模型，中文写作质量强 + 国区可用
  */
 export const DEFAULT_MODELS = {
-  best: 'deepseek/deepseek-chat',                  // 主选：DeepSeek V3（国产，中文最强）
-  fast: 'qwen/qwen-2.5-14b-instruct',             // 快速：Qwen 14B
+  best: 'moonshotai/kimi-k2',                     // 主选：Kimi K2（中文写作实测最佳）
+  fast: 'deepseek/deepseek-chat',                  // 快速：DeepSeek V3
 } as const;
 
 /**
  * 国区友好 Fallback 模型链（按推荐顺序）
  * 优先国产模型 → 国际开源模型 → 国际闭源（可能国区不可用）
+ * v0.2.0 更新：实测 Kimi K2 风格匹配最好（18 分），提到首位
  */
 export const FALLBACK_CHAIN = [
-  'deepseek/deepseek-chat',                        // DeepSeek V3
+  'moonshotai/kimi-k2',                            // 月之暗面 Kimi K2（中文写作实测最佳）
+  'deepseek/deepseek-chat',                        // DeepSeek V3（速度最快）
   'qwen/qwen-2.5-72b-instruct',                    // 通义千问 72B
   'qwen/qwen-2.5-32b-instruct',                    // 通义千问 32B
   'qwen/qwen-2.5-14b-instruct',                    // 通义千问 14B（更快）
-  'moonshotai/kimi-k2',                            // 月之暗面 Kimi K2
   'zhipu/glm-4-32b',                               // 智谱 GLM-4
   'meta-llama/llama-3.1-70b-instruct',             // Meta Llama 70B（国际开源）
   'meta-llama/llama-3.1-8b-instruct',              // Meta Llama 8B
@@ -101,7 +103,7 @@ export async function generateEssay(
       : [process.env.OPENROUTER_MODEL || DEFAULT_MODELS.best];
   }
 
-  const systemPrompt = buildSystemPrompt(opts.dna);
+  const systemPrompt = buildSystemPrompt(opts.dna, opts.profile);
   const userPrompt = buildUserPrompt(opts);
 
   const errors: string[] = [];
