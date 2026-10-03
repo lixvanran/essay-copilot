@@ -84,6 +84,14 @@ function promisifyRequest<T>(req: IDBRequest<T>): Promise<T> {
 // ============ Profiles API ============
 
 export async function saveProfile(profile: StyleProfile_): Promise<void> {
+  // 配额保护：序列化大小 <= 2MB（IndexedDB 通常 10MB 总配额）
+  const serialized = JSON.stringify(profile);
+  if (serialized.length > 2 * 1024 * 1024) {
+    throw new Error(
+      `档案太大（${(serialized.length / 1024 / 1024).toFixed(2)}MB），请减少范文样本数（最多 5 篇 × 5000 字）`
+    );
+  }
+
   await withStore(STORE_PROFILES, 'readwrite', async store => {
     await promisifyRequest(store.put(profile));
   });
@@ -112,9 +120,20 @@ export async function deleteProfile(id: string): Promise<void> {
 // ============ Favorites API ============
 
 export async function addFavorite(topic: string, category?: string, notes?: string): Promise<FavoriteTopic> {
+  // 输入校验
+  if (!topic || topic.trim().length === 0) {
+    throw new Error('题目不能为空');
+  }
+  if (topic.length > 200) {
+    throw new Error('题目不能超过 200 字');
+  }
+  if (notes && notes.length > 500) {
+    throw new Error('备注不能超过 500 字');
+  }
+
   const fav: FavoriteTopic = {
     id: `fav-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    topic,
+    topic: topic.trim(),
     category,
     notes,
     savedAt: Date.now()

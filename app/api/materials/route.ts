@@ -29,6 +29,9 @@ export async function GET(req: NextRequest) {
     if (!topic) {
       return NextResponse.json({ error: 'topic 必填' }, { status: 400 });
     }
+    if (topic.length > 200) {
+      return NextResponse.json({ error: 'topic 长度不能超过 200 字' }, { status: 400 });
+    }
 
     const validTypes: MaterialType[] = ['argument', 'narrative', 'lyric'];
     const type = typeParam && validTypes.includes(typeParam) ? typeParam : undefined;

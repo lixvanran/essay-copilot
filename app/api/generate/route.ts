@@ -3,8 +3,19 @@ import { generateEssay, generateBestEssay } from '@/lib/llm';
 import { scoreAITrace } from '@/lib/ai-detector';
 import type { StyleDNA } from '@/lib/style-dna';
 import type { StyleProfile } from '@/lib/style-extractor';
+import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIP(req);
+  const rl = checkRateLimit(`generate:${ip}`, RATE_LIMITS.generate);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: `请求太频繁，${Math.ceil(rl.resetIn / 1000)} 秒后重试` },
+      { status: 429, headers: rateLimitHeaders(rl) }
+    );
+  }
+
   try {
     let body: any;
     try {
@@ -55,7 +66,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ result: { ...result, aiScore } });
     }
   } catch (e: any) {
-    console.error('Generate error:', e);
+    logger.error('generate failed', { error: e.message, stack: e.stack?.slice(0, 500) });
     const msg = e?.message || 'Internal error';
     // OpenRouter 错误：把 401/402/429 等包装成友好提示 + 合适状态码
     const orMatch = msg.match(/OpenRouter error (\d+):\s*(.+)/);

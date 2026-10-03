@@ -10,6 +10,7 @@ import { buildSystemPrompt } from '@/lib/prompts';
 import type { StyleDNA } from '@/lib/style-dna';
 import type { StyleProfile } from '@/lib/style-extractor';
 import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest) {
       durationMs: Date.now() - start
     });
   } catch (e: any) {
-    console.error('Expand error:', e);
+    logger.error('outline-to-essay failed', { error: e.message });
     return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 });
   }
 }

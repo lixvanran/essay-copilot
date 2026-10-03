@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -90,6 +91,9 @@ export async function POST(req: NextRequest) {
     if (essay.length < 100) {
       return NextResponse.json({ error: '作文至少 100 字' }, { status: 400 });
     }
+    if (essay.length > 10000) {
+      return NextResponse.json({ error: '作文长度不能超过 10000 字' }, { status: 400 });
+    }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) return NextResponse.json({ error: 'OPENROUTER_API_KEY not configured' }, { status: 500 });
@@ -148,7 +152,7 @@ export async function POST(req: NextRequest) {
       durationMs: Date.now() - start
     });
   } catch (e: any) {
-    console.error('Predict score error:', e);
+    logger.error('predict-score failed', { error: e.message });
     return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 });
   }
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { listFavorites, deleteFavorite, type FavoriteTopic } from '@/lib/profile-db';
+import { listFavorites, deleteFavorite, addFavorite, type FavoriteTopic } from '@/lib/profile-db';
 
 type Props = {
   onPick?: (topic: string) => void;
@@ -27,12 +27,15 @@ export default function FavoritesPanel({ onPick, onClose }: Props) {
 
   const handleAdd = async () => {
     if (!newTopic.trim()) return;
-    const { addFavorite } = await import('@/lib/profile-db');
-    await addFavorite(newTopic.trim(), undefined, newNotes.trim() || undefined);
-    setNewTopic('');
-    setNewNotes('');
-    setAdding(false);
-    refresh();
+    try {
+      await addFavorite(newTopic.trim(), undefined, newNotes.trim() || undefined);
+      setNewTopic('');
+      setNewNotes('');
+      setAdding(false);
+      refresh();
+    } catch (e: any) {
+      alert(e.message || '添加失败');
+    }
   };
 
   const handleDelete = async (id: string) => {

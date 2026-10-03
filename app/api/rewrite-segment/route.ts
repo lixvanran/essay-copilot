@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildSystemPrompt } from '@/lib/prompts';
 import type { StyleDNA } from '@/lib/style-dna';
 import type { StyleProfile } from '@/lib/style-extractor';
+import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -30,6 +32,15 @@ const REWRITE_INSTRUCTIONS = `# 你的任务
  * 调用 OpenRouter 重写段落
  */
 export async function POST(req: NextRequest) {
+  const ip = getClientIP(req);
+  const rl = checkRateLimit(`rewrite:${ip}`, RATE_LIMITS.rewrite);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: `请求太频繁，${Math.ceil(rl.resetIn / 1000)} 秒后重试` },
+      { status: 429, headers: rateLimitHeaders(rl) }
+    );
+  }
+
   try {
     let body: any;
     try {
@@ -51,6 +62,9 @@ export async function POST(req: NextRequest) {
     }
     if (originalSegment.trim().length < 10) {
       return NextResponse.json({ error: '段落太短（< 10 字），不值得重写' }, { status: 400 });
+    }
+    if (originalSegment.length > 3000) {
+      return NextResponse.json({ error: '段落太长（> 3000 字），不支持' }, { status: 400 });
     }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
@@ -123,7 +137,7 @@ export async function POST(req: NextRequest) {
       durationMs: Date.now() - start
     });
   } catch (e: any) {
-    console.error('Rewrite error:', e);
+    logger.error('rewrite-segment failed', { error: e.message });
     const msg = e?.message || 'Internal error';
     const orMatch = msg.match(/OpenRouter error (\d+):\s*(.+)/);
     if (orMatch) {

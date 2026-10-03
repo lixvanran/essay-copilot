@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildSystemPrompt } from '@/lib/prompts';
 import type { StyleDNA } from '@/lib/style-dna';
 import type { StyleProfile } from '@/lib/style-extractor';
+import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -44,6 +46,15 @@ const POLISH_INSTRUCTIONS = `# 你的任务
 直接输出润色后的完整文章，不要任何前缀/后缀/解释/总结。`;
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIP(req);
+  const rl = checkRateLimit(`polish:${ip}`, RATE_LIMITS.generate);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: `请求太频繁，${Math.ceil(rl.resetIn / 1000)} 秒后重试` },
+      { status: 429, headers: rateLimitHeaders(rl) }
+    );
+  }
+
   try {
     let body: any;
     try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
@@ -56,6 +67,9 @@ export async function POST(req: NextRequest) {
 
     if (!dna || !essay || essay.trim().length < 100) {
       return NextResponse.json({ error: 'dna 和 essay 必填，essay 至少 100 字' }, { status: 400 });
+    }
+    if (essay.length > 10000) {
+      return NextResponse.json({ error: 'essay 不能超过 10000 字' }, { status: 400 });
     }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
@@ -109,7 +123,7 @@ export async function POST(req: NextRequest) {
       durationMs: Date.now() - start
     });
   } catch (e: any) {
-    console.error('Polish error:', e);
+    logger.error('polish failed', { error: e.message });
     const msg = e?.message || 'Internal error';
     return NextResponse.json({ error: msg }, { status: 500 });
   }

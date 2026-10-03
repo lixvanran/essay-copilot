@@ -6,6 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -33,6 +35,15 @@ const PROMPT = `你是一位经验丰富的语文老师。请根据用户的关�
 }`;
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIP(req);
+  const rl = checkRateLimit(`topicGen:${ip}`, RATE_LIMITS.topicGen);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: `请求太频繁，${Math.ceil(rl.resetIn / 1000)} 秒后重试` },
+      { status: 429, headers: rateLimitHeaders(rl) }
+    );
+  }
+
   try {
     let body: any;
     try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
@@ -98,7 +109,7 @@ export async function POST(req: NextRequest) {
       durationMs: Date.now() - start
     });
   } catch (e: any) {
-    console.error('TopicGen error:', e);
+    logger.error('generate-topic failed', { error: e.message });
     return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 });
   }
 }

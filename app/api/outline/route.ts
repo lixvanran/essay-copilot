@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { StyleDNA } from '@/lib/style-dna';
 import type { StyleProfile } from '@/lib/style-extractor';
 import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -162,7 +163,7 @@ export async function POST(req: NextRequest) {
       durationMs: Date.now() - start
     });
   } catch (e: any) {
-    console.error('Outline error:', e);
+    logger.error('outline failed', { error: e.message });
     const msg = e?.message || 'Internal error';
     return NextResponse.json({ error: msg }, { status: 500 });
   }

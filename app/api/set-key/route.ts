@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
 
 // 注意：path 在函数内求值（不能用 const 缓存），否则测试 mock process.cwd() 无效
 function getEnvPath(): string {
@@ -25,6 +26,15 @@ function getLockPath(): string {
 const KEY_FORMAT = /^sk-or-v1-[a-zA-Z0-9_-]{10,}$/;
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIP(req);
+  const rl = checkRateLimit(`setkey:${ip}`, RATE_LIMITS.default);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: `请求太频繁，${Math.ceil(rl.resetIn / 1000)} 秒后重试` },
+      { status: 429, headers: rateLimitHeaders(rl) }
+    );
+  }
+
   try {
     let body: any;
     try {

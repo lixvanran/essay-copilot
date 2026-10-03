@@ -33,6 +33,12 @@ export default function MaterialsPanel({ topic, type: initialType, onPick, onClo
 
   const fetchMaterials = useCallback(async () => {
     if (!topic.trim()) return;
+    const ctrl = new AbortController();
+    // 取消上一个进行中的请求（防止快速切换 type 竞态）
+    const cancelPrev = (window as any).__materialsAbort;
+    if (cancelPrev) cancelPrev.abort();
+    (window as any).__materialsAbort = ctrl;
+
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -40,11 +46,11 @@ export default function MaterialsPanel({ topic, type: initialType, onPick, onClo
         limit: '5'
       });
       if (type) params.set('type', type);
-      const res = await fetch(`/api/materials?${params}`);
+      const res = await fetch(`/api/materials?${params}`, { signal: ctrl.signal });
       const data = await res.json();
       if (res.ok) setMaterials(data.materials || []);
-    } catch (e) {
-      console.error('Fetch materials failed:', e);
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') console.error('Fetch materials failed:', e);
     } finally {
       setLoading(false);
     }
