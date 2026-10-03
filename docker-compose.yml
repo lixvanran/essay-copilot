@@ -1,0 +1,36 @@
+# ==========================================
+# 作文副驾驶 - Docker Compose
+# ==========================================
+# 一键启动：
+#   docker compose up -d
+# 然后访问 http://localhost:3000
+# ==========================================
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: essay-copilot
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      # ⚠️ 生产环境必须配置真实 key（建议用 .env 文件）
+      # - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    env_file:
+      - .env.production  # 可选：自己创建此文件，包含 OPENROUTER_API_KEY
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # 可选：限制资源
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 512M
+    #       cpus: '0.5'

@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Configure npm mirror
+        run: npm config set registry https://registry.npmmirror.com
+
+      - name: Install dependencies
+        run: npm ci --no-audit --legacy-peer-deps
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+        env:
+          # 占位 key（仅用于构建时类型验证）
+          OPENROUTER_API_KEY: sk-or-v1-ci-placeholder-key
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build
+        env:
+          OPENROUTER_API_KEY: sk-or-v1-ci-placeholder-key
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: npm run test:e2e
+        env:
+          OPENROUTER_API_KEY: sk-or-v1-ci-placeholder-key
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+      - name: Build summary
+        if: success()
+        run: |
+          echo "✅ All checks passed!"
+          echo "Coverage:"
+          cat coverage/coverage-summary.json | grep -E '"pct"|"lines"|"statements"' | head -10

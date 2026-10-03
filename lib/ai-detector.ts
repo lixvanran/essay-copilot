@@ -133,17 +133,21 @@ export function scoreAITrace(essay: string, userDNA?: StyleDNA): AITraceScore {
     if (matches.length > 0) templateHits += matches.length;
   }
 
-  // 2. 句首重复度
-  const sentenceStarts = sentences.map(s => s.slice(0, 3));
+  // 2. 句首重复度（取首 2 字符，AI 倾向短句首重复如"今天"）
+  const sentenceStarts = sentences.map(s => s.trim().slice(0, 2));
   const startCounts = new Map<string, number>();
   for (const start of sentenceStarts) {
-    if (start.length === 3) {
+    if (start.length === 2) {
       startCounts.set(start, (startCounts.get(start) || 0) + 1);
     }
   }
-  const repeatedStarts = Array.from(startCounts.values()).filter(c => c > 1);
-  const totalStarts = sentenceStarts.filter(s => s.length === 3).length || 1;
-  const sentenceStartRepeat = repeatedStarts.reduce((a, b) => a + b, 0) / totalStarts;
+  // 重复比例 = (重复出现的句数) / (总句数)
+  let repeatedSentenceCount = 0;
+  for (const cnt of startCounts.values()) {
+    if (cnt > 1) repeatedSentenceCount += cnt;
+  }
+  const totalStarts = sentenceStarts.filter(s => s.length === 2).length || 1;
+  const sentenceStartRepeat = repeatedSentenceCount / totalStarts;
 
   // 3. 词汇丰富度
   const wordSet = new Set(tokens);

@@ -21,15 +21,13 @@ export async function POST(req: NextRequest) {
     // 1. 规则量化 DNA
     const dna = extractStyleDNA(samples);
 
-    // 2. LLM 风格画像（异步调，需要 API key）
-    const apiKey = body?.apiKey || process.env.OPENROUTER_API_KEY;
+    // 2. LLM 风格画像（仅用 server-side key，不接受 body.apiKey 防滥用）
+    const apiKey = process.env.OPENROUTER_API_KEY;
     let profile = null;
     let profileError = null;
     if (apiKey && !/your-key-here|placeholder|xxx/i.test(apiKey)) {
       try {
-        profile = await extractStyleProfile(samples, apiKey, {
-          model: body?.profileModel  // 可选覆盖
-        });
+        profile = await extractStyleProfile(samples, apiKey);
       } catch (e: any) {
         profileError = e.message;
         console.error('[analyze] LLM profile extraction failed:', e.message);

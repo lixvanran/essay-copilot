@@ -6,6 +6,12 @@ body {
   font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   background: #f7f7f5;
   color: #25251f;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.dark body {
+  background: #0f0f10;
+  color: #e8e8ec;
 }
 
 .essay-text {
@@ -17,4 +23,98 @@ body {
 .essay-text p {
   margin-bottom: 1em;
   text-indent: 2em;
+}
+
+/* 暗色主题全局覆盖 */
+.dark .bg-white {
+  background-color: #1a1a1d !important;
+}
+.dark .bg-ink-50 {
+  background-color: #23232a !important;
+}
+.dark .border-ink-100 {
+  border-color: #2a2a32 !important;
+}
+.dark .border-ink-200 {
+  border-color: #3a3a44 !important;
+}
+.dark .text-ink-800 {
+  color: #e8e8ec !important;
+}
+.dark .text-ink-700 {
+  color: #d0d0d4 !important;
+}
+.dark .text-ink-600 {
+  color: #b8b8bc !important;
+}
+.dark .text-ink-500 {
+  color: #a0a0a8 !important;
+}
+.dark .text-ink-400 {
+  color: #7a7a82 !important;
+}
+.dark .bg-ink-800 {
+  background-color: #e8e8ec !important;
+  color: #171712 !important;
+}
+.dark .bg-ink-100 {
+  background-color: #2a2a32 !important;
+}
+.dark .hover\:bg-ink-50:hover {
+  background-color: #23232a !important;
+}
+.dark .hover\:bg-ink-700:hover {
+  background-color: #d0d0d4 !important;
+  color: #171712 !important;
+}
+.dark .bg-ink-700 {
+  background-color: #c0c0c4 !important;
+  color: #171712 !important;
+}
+.dark .text-red-600 {
+  color: #f87171 !important;
+}
+.dark .bg-red-50 {
+  background-color: #2a1a1a !important;
+}
+.dark .bg-red-100\/60 {
+  background-color: rgba(248, 113, 113, 0.15) !important;
+}
+.dark .bg-emerald-50 {
+  background-color: #1a2a1f !important;
+}
+.dark .text-emerald-700 {
+  color: #6ee7b7 !important;
+}
+.dark .bg-amber-50 {
+  background-color: #2a2418 !important;
+}
+.dark .text-amber-700 {
+  color: #fbbf24 !important;
+}
+.dark .bg-orange-50 {
+  background-color: #2a2018 !important;
+}
+.dark .text-orange-700 {
+  color: #fb923c !important;
+}
+.dark .border-emerald-200 {
+  border-color: rgba(110, 231, 183, 0.3) !important;
+}
+
+/* 滚动条 */
+.dark ::-webkit-scrollbar {
+  background: #1a1a1d;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #3a3a44;
+  border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4a4a54;
+}
+
+/* backdrop blur 暗色调整 */
+.dark header {
+  background-color: rgba(15, 15, 16, 0.85) !important;
 }

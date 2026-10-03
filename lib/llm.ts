@@ -3,8 +3,6 @@
  * 文档：https://openrouter.ai/docs
  */
 
-import type { StyleDNA } from './style-dna';
-import type { StyleProfile } from './style-extractor';
 import type { GenerateOptions } from './prompts';
 import { buildSystemPrompt, buildUserPrompt } from './prompts';
 

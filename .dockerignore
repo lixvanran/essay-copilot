@@ -1,0 +1,18 @@
+# 不打包进 Docker 镜像的文件
+node_modules
+.next
+coverage
+.git
+.env.local
+.env
+*.log
+out
+dist
+.DS_Store
+.vscode
+.idea
+tests
+**/*.test.ts
+**/*.spec.ts
+.vitest
+__snapshots__

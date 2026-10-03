@@ -105,12 +105,8 @@ const CONNECTIVE_WORDS = [
 // 比喻/拟人/排比 关键词
 const METAPHOR_MARKERS = ['像', '似', '如', '似的', '仿佛', '犹如', '宛如', '好比', '如同', '像是'];
 
-// 单字停用词
-const SINGLE_STOP = new Set([
-  '的', '了', '是', '在', '有', '和', '就', '不', '都', '也', '到', '说', '要', '去', '会', '着', '那', '这', '把', '他', '她', '它',
-  '得', '地', '过', '上', '下', '里', '个', '们', '为', '从', '向', '以', '被', '让', '并', '且', '但', '而', '或', '若', '虽', '已', '将', '可', '应', '须', '必',
-  '我', '你', '他', '她', '它', '们'
-]);
+// 单字停用词（功能词提取中过滤用 — 已迁移到 lib/jieba-helper.ts 的 STOPWORDS）
+// 保留注释：此常量在此文件不再使用，但保留历史参考。
 
 /**
  * 分句
@@ -164,10 +160,7 @@ function calcDialogueRatio(text: string): number {
 function detectSentenceTemplates(sentences: string[]): { pattern: string; count: number; example: string }[] {
   const templates: Record<string, { count: number; example: string }> = {};
 
-  // "X不X" "X了X"
-  const repeated = /\b(.+?)\1\b/g;
   for (const s of sentences) {
-    // 排比（找连续相似的 3+ 字开头）
     // 简化：找"不是...而是..."结构
     if (/不是.+?而是/.test(s)) {
       templates['不是...而是...'] = templates['不是...而是...'] || { count: 0, example: s };
@@ -218,7 +211,6 @@ function detectSentenceTemplates(sentences: string[]): { pattern: string; count:
  */
 function analyzeSentencePatterns(sentences: string[]) {
   const total = sentences.length || 1;
-  const questionCount = sentences.filter(s => /[？?]$/.test(s)).length;
   const exclamatoryCount = sentences.filter(s => /[！!]$/.test(s)).length;
   // 反问：句末问号 + 包含否定词
   const rhetoricalCount = sentences.filter(s => /[？?]$/.test(s) && /(难道|怎么会|怎么可能|不是|怎么)/.test(s)).length;

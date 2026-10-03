@@ -1,4 +1,4 @@
-# 作文副驾驶 · v0.2.0
+# 作文副驾驶 · v0.6.0
 
 > Not "write the best", but "write the most like you".
 
@@ -8,25 +8,54 @@ AI essay writing that mimics **YOUR** style — not generic AI style.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-lixvanran%2Fessay--copilot-black.svg)](https://github.com/lixvanran/essay-copilot)
+[![Tests](https://img.shields.io/badge/tests-38_passing-brightgreen.svg)]()
+[![Coverage](https://img.shields.io/badge/coverage-90%25+-brightgreen.svg)]()
 
 **国区 OpenRouter 优化**：默认走国产模型（Kimi K2 / DeepSeek V3 / Qwen），国区账户也能用。
 
 ---
 
-## v0.2.0 重大升级
+## v0.5.0 重大升级
 
-| 模块 | v0.1.0 | v0.2.0 |
-|---|---|---|
-| **分词** | 简单双字切分（噪声大） | **jieba-wasm 真实分词** |
-| **风格提取** | 纯规则 | **规则 + LLM 风格画像**（质化+量化） |
-| **功能词** | 无 | 提取**真实的连词/语气词/副词**（jieba 词表） |
-| **生成模式** | 单模型 | **多采样 / 多模型对比（DeepSeek+Qwen+Kimi）/ 单篇** |
-| **实测试** | 13 分 | **Kimi 18 分 · Qwen 30 · DeepSeek 37** |
-| **复制/下载** | 无 | 一键复制 + 下载 .txt |
-| **错误提示** | 技术性 | 友好化（余额不足/Key 错误/限流 都有明确指引） |
-| **加载状态** | 死板 spinner | 进度文字 + 旋转图标 |
+### 🔥 三大核心功能
 
-**v0.2.0 核心**：**LLM 风格画像 + jieba 真实分词** —— 文风模仿的两大引擎都装上了。
+1. **大纲模式（Outline Mode）** — 学生最需要：先出大纲（立意 + 段落 + 论据），再展开成全文
+2. **评分预测** — 杀手锏：丢一篇作文 + 评分标准 → AI 预测会得几分（带维度分解）
+3. **历史记录面板** — 之前留的尾巴，补上 UI。侧栏打开，最近 5 篇可调出
+
+### 📦 部署 + 工程化
+
+- **Docker 镜像**（多阶段构建，最终 ~150MB，含 HEALTHCHECK）
+- **docker-compose.yml**（一键启动）
+- **GitHub Actions CI**（typecheck + lint + test + build）
+- **PWA**（service worker + manifest，离线可用）
+- **PDF 导出**（嵌入中文字体，pdf-lib 纯 JS）
+- **集成测试**（API routes）
+
+### v0.5.0 三大新接口
+
+```
+POST /api/outline           ← 大纲生成（结构 + 论点）
+POST /api/outline-to-essay  ← 大纲展开成全文
+POST /api/predict-score     ← 评分预测（带维度分解 + AI 嫌疑检测）
+```
+
+### 完整 API 路由（11 个）
+
+```
+POST /api/analyze           风格提取
+POST /api/deauto-essay      AI 味自动消除（杀手锏）
+POST /api/generate          生成
+POST /api/generate-topic    AI 题目生成
+GET  /api/health            健康检查
+POST /api/outline           大纲生成（新）
+POST /api/outline-to-essay  大纲展开（新）
+POST /api/polish            润色
+POST /api/predict-score     评分预测（新）
+POST /api/rewrite-segment   段落重写
+POST /api/score             AI 评分
+POST /api/set-key           Key 管理
+```
 
 ---
 
@@ -62,14 +91,39 @@ node start.js
 
 ---
 
-## 三步使用流程
+## 使用流程
 
-1. **上传范文**（1-10 篇你过去的作文）— 自动用 jieba 提取分词 + LLM 提取风格画像
+### 模式 A：写新作文（默认）
+
+1. **上传范文**（.txt / .md / .docx）— 自动用 jieba 提取分词 + LLM 提取风格画像
 2. **生成作文**（输入题目，选生成模式）
    - **多采样**：1 个模型生成 3 篇，挑 AI 味最低的
    - **多模型对比**：DeepSeek / Qwen / Kimi 同时跑，挑最佳的（推荐）
    - **单篇**：最快
-3. **查看结果**（AI 痕迹评分 + 可疑句标红 + 一键复制/下载）
+3. **查看 & 精调结果**
+   - AI 痕迹评分（实时更新）
+   - 可疑句标红
+   - **⚡ 一键消除 AI 味**（杀手锏按钮，10 秒降到 ≤ 25 分）
+   - **段落级重写**（鼠标悬停段落 → "重写这段" → AI 重写）
+   - **可疑句一键重写**（FlaggedPanel 右侧 ✏️ 按钮）
+   - **撤销上一步**（顶部 ↶ 按钮，10 步历史）
+   - 一键复制 / 下载 .txt / 下载 .docx / 下载 .md
+
+### 模式 B：润色现有作文
+
+1. 顶部切到 "💎 润色现有"
+2. 上传 1-3 篇范文（作为风格参考）
+3. 粘贴你想润色的全文
+4. AI 按你的风格打磨每一句（不重写）
+5. 进入同样的结果页精调
+
+### 🪄 AI 题目生成器
+
+第二步点 "🪄 AI 出题" → 输入关键词（如"成长 父爱 失败"）+ 选学段 → 自动出 3-5 个题目候选 → 点选填入。
+
+### 🌙 暗色主题
+
+Header 右侧 🌙 / ☀️ 一键切换，自动 localStorage 持久化。
 
 ---
 
@@ -124,12 +178,12 @@ OPENROUTER_API_KEY=sk-or-v1-你的key
 
 ## 隐私
 
-v0.2 阶段：
-- 不保存任何数据到磁盘
-- 不做用户系统
-- 范文仅在内存中处理，刷新即丢
-- LLM 调用直接到 OpenRouter，不经过中间存储
-- **风格画像有内存缓存**（同进程内相同范文不重复调 LLM），重启即清空
+v0.5 阶段：
+- **localStorage 持久化**：范文/DNA/历史（仅你本机，7 天自动过期）
+- **不上传服务器**：.docx 文件解析在浏览器端（mammoth.js）
+- **LLM 调用**：直接到 OpenRouter，不经过中间存储
+- **AI 题目生成**：关键词不上传，仅用于 OpenRouter
+- **不做用户系统**：无账号，无登录
 
 ## 协议
 

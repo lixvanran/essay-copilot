@@ -1,11 +1,15 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import mammoth from 'mammoth';
 import type { StyleDNA } from '@/lib/style-dna';
 import type { StyleProfile } from '@/lib/style-extractor';
+import { loadAnalysis, saveAnalysis, clearAnalysis, type SavedAnalysis } from '@/lib/storage';
 
 type Props = {
+  mode: 'generate' | 'polish';
   onAnalyzed: (data: { dna: StyleDNA; profile: StyleProfile | null; profileError: string | null; samples: string[] }) => void;
+  onPolish?: (data: { dna: StyleDNA; profile: StyleProfile | null; samples: string[]; polishEssay: string }) => void;
 };
 
 const DEMO_SAMPLES = [
@@ -32,8 +36,9 @@ const DEMO_SAMPLES = [
 毕业那天，李老师给我们每人写了一句话。我的那张纸上写着：愿你一生坦荡。`
 ];
 
-export default function UploadStep({ onAnalyzed }: Props) {
+export default function UploadStep({ mode, onAnalyzed, onPolish }: Props) {
   const [texts, setTexts] = useState<string[]>([]);
+  const [polishEssay, setPolishEssay] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -41,9 +46,16 @@ export default function UploadStep({ onAnalyzed }: Props) {
   const [keyStatus, setKeyStatus] = useState<{ hasKey: boolean; length?: number; isPlaceholder?: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
   const [keyMessage, setKeyMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [savedSession, setSavedSession] = useState<SavedAnalysis | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const polishFileRef = useRef<HTMLInputElement>(null);
 
-  // 打开高级设置时加载 key 状态
+  // 启动时检查 localStorage
+  useEffect(() => {
+    const saved = loadAnalysis();
+    if (saved) setSavedSession(saved);
+  }, []);
+
   const toggleAdvanced = async () => {
     const next = !showAdvanced;
     setShowAdvanced(next);
@@ -56,7 +68,6 @@ export default function UploadStep({ onAnalyzed }: Props) {
     }
   };
 
-  // 保存 key 到 .env.local
   const handleSaveKey = async () => {
     if (!keyInput.trim()) return;
     setSaving(true);
@@ -98,15 +109,58 @@ export default function UploadStep({ onAnalyzed }: Props) {
     setTexts(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const handleFile = async (files: FileList | null) => {
+  const handleFile = async (files: FileList | null, target: 'samples' | 'polish' = 'samples') => {
     if (!files) return;
     for (const file of Array.from(files)) {
-      if (file.size > 1_000_000) {
-        setError(`文件 ${file.name} 超过 1MB，跳过`);
+      if (file.size > 2_000_000) {
+        setError(`文件 ${file.name} 超过 2MB，跳过`);
         continue;
       }
-      const text = await file.text();
-      addText(text);
+
+      // MIME 校验：防止恶意文件伪装成 .docx / .txt
+      // DOCX 的合法 MIME: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      // 或者 application/zip（.docx 本质是 zip）
+      const lower = file.name.toLowerCase();
+      const mime = file.type || '';
+      const isDocx = lower.endsWith('.docx');
+      const isText = lower.endsWith('.txt') || lower.endsWith('.md');
+
+      if (isDocx && mime && !mime.includes('zip') && !mime.includes('word') && mime !== '') {
+        setError(`${file.name} MIME 类型不安全（${mime}），已跳过`);
+        continue;
+      }
+      if (!isDocx && !isText) {
+        setError(`${file.name} 不支持的扩展名（仅支持 .txt / .md / .docx）`);
+        continue;
+      }
+
+      try {
+        let text: string;
+        if (isDocx) {
+          const arrayBuffer = await file.arrayBuffer();
+          // 双重校验：ZIP 文档魔数是 PK (0x504B0304)
+          const view = new Uint8Array(arrayBuffer, 0, 4);
+          if (view[0] !== 0x50 || view[1] !== 0x4B) {
+            setError(`${file.name} 不是真正的 .docx 文件（缺失 ZIP 魔数）`);
+            continue;
+          }
+          const result = await mammoth.extractRawText({ arrayBuffer });
+          text = result.value;
+          if (result.messages.length > 0) {
+            console.warn(`[${file.name}] mammoth warnings:`, result.messages);
+          }
+        } else {
+          text = await file.text();
+        }
+        if (target === 'samples') {
+          addText(text);
+        } else {
+          setPolishEssay(text);
+          setError(null);
+        }
+      } catch (e: any) {
+        setError(`${file.name} 解析失败：${e.message}`);
+      }
     }
   };
 
@@ -125,12 +179,18 @@ export default function UploadStep({ onAnalyzed }: Props) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(friendlyError(data.error));
-      onAnalyzed({
+      const result = {
         dna: data.dna,
         profile: data.profile || null,
         profileError: data.profileError || null,
         samples: texts
+      };
+      // 持久化
+      saveAnalysis({
+        ...result,
+        savedAt: Date.now()
       });
+      onAnalyzed(result);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -138,7 +198,61 @@ export default function UploadStep({ onAnalyzed }: Props) {
     }
   };
 
-  // 把后端错误转成中文友好提示
+  const handlePolishStart = async () => {
+    if (texts.length < 1) {
+      setError('请至少添加 1 篇范文（用作风格来源）');
+      return;
+    }
+    if (polishEssay.trim().length < 100) {
+      setError('待润色的作文至少 100 字');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ samples: texts })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(friendlyError(data.error));
+      const result = {
+        dna: data.dna,
+        profile: data.profile || null,
+        samples: texts,
+        polishEssay: polishEssay.trim()
+      };
+      saveAnalysis({
+        dna: result.dna,
+        profile: result.profile,
+        samples: result.samples,
+        savedAt: Date.now()
+      });
+      onPolish?.(result);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRestoreSession = () => {
+    if (!savedSession) return;
+    setTexts(savedSession.samples);
+    onAnalyzed({
+      dna: savedSession.dna,
+      profile: savedSession.profile,
+      profileError: null,
+      samples: savedSession.samples
+    });
+  };
+
+  const handleClearSaved = () => {
+    clearAnalysis();
+    setSavedSession(null);
+  };
+
   const friendlyError = (msg?: string): string => {
     if (!msg) return '分析失败';
     if (/OPENROUTER_API_KEY/.test(msg)) {
@@ -157,21 +271,53 @@ export default function UploadStep({ onAnalyzed }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-2xl p-8 shadow-sm border border-ink-100">
-        <h2 className="text-2xl font-semibold mb-2">第一步：喂 AI 读懂你的文风</h2>
-        <p className="text-ink-500 text-sm leading-relaxed">
-          粘贴或上传你过去写过的作文（3-10 篇效果最好）。AI 会提取你的高频词、句长偏好、语气温度……生成你的"文风 DNA"。
-          <span className="text-ink-400"> · 不会保存到任何地方</span>
+      {savedSession && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-2xl p-4 flex items-center justify-between">
+          <div className="text-sm">
+            <div className="text-amber-900 dark:text-amber-200 font-medium">检测到上次会话</div>
+            <div className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+              {savedSession.samples.length} 篇范文 · {new Date(savedSession.savedAt).toLocaleString('zh-CN')}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleClearSaved}
+              className="text-xs px-3 py-1.5 text-amber-700 hover:text-amber-900 transition"
+            >
+              丢弃
+            </button>
+            <button
+              onClick={handleRestoreSession}
+              className="text-xs px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition font-medium"
+            >
+              ↻ 恢复
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white dark:bg-dark-surface rounded-2xl p-8 shadow-sm border border-ink-100 dark:border-dark-border">
+        <h2 className="text-2xl font-semibold mb-2">
+          {mode === 'generate' ? '第一步：喂 AI 读懂你的文风' : '润色模式：贴一篇 + 参考风格'}
+        </h2>
+        <p className="text-ink-500 dark:text-dark-textMuted text-sm leading-relaxed">
+          {mode === 'generate'
+            ? '粘贴或上传你过去写过的作文（1-10 篇）。AI 会提取你的文风 DNA，再帮你生成一篇。'
+            : '上传或粘贴一篇你想润色的作文，同时上传 1-3 篇范文作为风格参考。AI 会按你的风格润色这篇。'
+          }
+          <span className="text-ink-400"> · 不会上传到服务器</span>
         </p>
 
+        {/* 范文列表（两种模式都要） */}
         <div className="mt-6 space-y-3">
+          <div className="text-xs text-ink-500 font-medium">范文（{texts.length} 篇 · 至少 1 篇）</div>
           {texts.map((t, i) => (
-            <div key={i} className="relative bg-ink-50 rounded-lg p-4 pr-12 group">
-              <div className="text-xs text-ink-400 mb-1">范文 {i + 1} · {t.length} 字</div>
-              <div className="text-sm text-ink-700 line-clamp-3">{t.slice(0, 200)}...</div>
+            <div key={i} className="relative bg-ink-50 dark:bg-dark-surfaceHover rounded-lg p-4 pr-12 group">
+              <div className="text-xs text-ink-400 dark:text-dark-textSubtle mb-1">范文 {i + 1} · {t.length} 字</div>
+              <div className="text-sm text-ink-700 dark:text-dark-text line-clamp-3">{t.slice(0, 200)}...</div>
               <button
                 onClick={() => removeText(i)}
-                className="absolute top-3 right-3 text-ink-400 hover:text-ink-800 text-sm"
+                className="absolute top-3 right-3 text-ink-400 hover:text-ink-800 dark:hover:text-dark-text"
               >
                 ✕
               </button>
@@ -179,7 +325,7 @@ export default function UploadStep({ onAnalyzed }: Props) {
           ))}
 
           {texts.length === 0 && (
-            <div className="border-2 border-dashed border-ink-200 rounded-lg p-8 text-center text-ink-400 text-sm">
+            <div className="border-2 border-dashed border-ink-200 dark:border-dark-borderLight rounded-lg p-6 text-center text-ink-400 dark:text-dark-textSubtle text-sm">
               还没有添加范文 · 点击下方按钮添加
             </div>
           )}
@@ -187,68 +333,101 @@ export default function UploadStep({ onAnalyzed }: Props) {
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-sm transition"
+              className="px-4 py-2 rounded-lg border border-ink-200 dark:border-dark-borderLight hover:bg-ink-50 dark:hover:bg-dark-surfaceHover text-sm transition"
             >
-              📁 上传文件 (.txt / .md)
+              📁 上传文件 (.txt / .md / .docx)
             </button>
             <button
               onClick={async () => {
                 const text = prompt('粘贴一段作文（至少 100 字）：');
                 if (text) addText(text);
               }}
-              className="px-4 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-sm transition"
+              className="px-4 py-2 rounded-lg border border-ink-200 dark:border-dark-borderLight hover:bg-ink-50 dark:hover:bg-dark-surfaceHover text-sm transition"
             >
               ✏️ 直接粘贴
             </button>
             <button
               onClick={loadDemo}
-              className="px-4 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-sm transition"
+              className="px-4 py-2 rounded-lg border border-ink-200 dark:border-dark-borderLight hover:bg-ink-50 dark:hover:bg-dark-surfaceHover text-sm transition"
             >
               🎭 加载示例（3 篇）
             </button>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,.md,text/plain"
+              accept=".txt,.md,.docx,text/plain"
               multiple
               hidden
-              onChange={e => handleFile(e.target.files)}
+              onChange={e => handleFile(e.target.files, 'samples')}
             />
           </div>
         </div>
 
+        {/* 润色模式：额外加"待润色作文" */}
+        {mode === 'polish' && (
+          <div className="mt-6 space-y-3">
+            <div className="text-xs text-ink-500 font-medium">待润色作文</div>
+            <textarea
+              value={polishEssay}
+              onChange={e => setPolishEssay(e.target.value)}
+              placeholder="粘贴你想润色的全文……"
+              className="w-full px-4 py-3 border border-ink-200 dark:border-dark-borderLight dark:bg-dark-surfaceHover rounded-lg text-sm focus:outline-none focus:border-ink-800 dark:focus:border-dark-text min-h-[180px] resize-y"
+            />
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => polishFileRef.current?.click()}
+                className="px-4 py-2 rounded-lg border border-ink-200 dark:border-dark-borderLight hover:bg-ink-50 dark:hover:bg-dark-surfaceHover text-sm transition"
+              >
+                📁 上传待润色文件
+              </button>
+              <input
+                ref={polishFileRef}
+                type="file"
+                accept=".txt,.md,.docx,text/plain"
+                hidden
+                onChange={e => handleFile(e.target.files, 'polish')}
+              />
+              <div className="text-xs text-ink-400 self-center">
+                {polishEssay.length} 字
+              </div>
+            </div>
+          </div>
+        )}
+
         {error && (
-          <div className="mt-4 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-md">{error}</div>
+          <div className="mt-4 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-md">{error}</div>
         )}
 
         <div className="mt-6 flex items-center justify-between">
-          <div className="text-xs text-ink-400">已添加 {texts.length} 篇</div>
+          <div className="text-xs text-ink-400">
+            {mode === 'polish' ? '范文 + 待润色作文 都要填' : '已添加 ' + texts.length + ' 篇'}
+          </div>
           <button
-            onClick={handleAnalyze}
-            disabled={loading || texts.length === 0}
-            className="px-6 py-2.5 bg-ink-800 text-ink-50 rounded-lg hover:bg-ink-700 disabled:opacity-40 disabled:cursor-not-allowed transition text-sm font-medium"
+            onClick={mode === 'polish' ? handlePolishStart : handleAnalyze}
+            disabled={loading || texts.length === 0 || (mode === 'polish' && polishEssay.trim().length < 100)}
+            className="px-6 py-2.5 bg-ink-800 dark:bg-dark-text text-ink-50 dark:text-dark-bg rounded-lg hover:bg-ink-700 disabled:opacity-40 disabled:cursor-not-allowed transition text-sm font-medium"
           >
-            {loading ? '分析中…' : '开始分析 →'}
+            {loading ? '处理中…' : (mode === 'polish' ? '开始润色 →' : '开始分析 →')}
           </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-ink-100">
+      <div className="bg-white dark:bg-dark-surface rounded-2xl p-6 shadow-sm border border-ink-100 dark:border-dark-border">
         <button
           onClick={toggleAdvanced}
           className="flex items-center justify-between w-full text-sm"
         >
-          <span className="text-ink-500">⚙️ OpenRouter API Key</span>
-          <span className="text-ink-400">
+          <span className="text-ink-500 dark:text-dark-textMuted">⚙️ OpenRouter API Key</span>
+          <span className="text-ink-400 dark:text-dark-textSubtle">
             {showAdvanced ? '收起' : (keyStatus?.hasKey ? '✓ 已配置' : '点此填入')}
           </span>
         </button>
         {showAdvanced && (
           <div className="mt-4 space-y-3 text-sm">
-            <p className="text-ink-500 text-xs">
-              填入后自动保存到 <code className="bg-ink-100 px-1.5 py-0.5 rounded">.env.local</code>，
+            <p className="text-ink-500 dark:text-dark-textMuted text-xs">
+              填入后自动保存到 <code className="bg-ink-100 dark:bg-dark-surfaceHover px-1.5 py-0.5 rounded">.env.local</code>，
               下次启动自动读取，不用每次重新填。
-              去 <a className="text-ink-700 underline" href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> 申请。
+              去 <a className="text-ink-700 dark:text-dark-text underline" href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> 申请。
             </p>
             <div className="flex gap-2">
               <input
@@ -256,12 +435,12 @@ export default function UploadStep({ onAnalyzed }: Props) {
                 value={keyInput}
                 onChange={e => setKeyInput(e.target.value)}
                 placeholder="sk-or-v1-..."
-                className="flex-1 px-3 py-2 border border-ink-200 rounded-lg text-sm font-mono"
+                className="flex-1 px-3 py-2 border border-ink-200 dark:border-dark-borderLight dark:bg-dark-surfaceHover rounded-lg text-sm font-mono"
               />
               <button
                 onClick={handleSaveKey}
                 disabled={!keyInput.trim() || saving}
-                className="px-4 py-2 bg-ink-800 text-ink-50 rounded-lg hover:bg-ink-700 disabled:opacity-40 text-sm transition"
+                className="px-4 py-2 bg-ink-800 dark:bg-dark-text text-ink-50 dark:text-dark-bg rounded-lg hover:bg-ink-700 disabled:opacity-40 text-sm transition"
               >
                 {saving ? '保存中…' : '保存'}
               </button>
@@ -272,7 +451,7 @@ export default function UploadStep({ onAnalyzed }: Props) {
               </div>
             )}
             {keyStatus?.hasKey && (
-              <div className="text-xs text-ink-400">
+              <div className="text-xs text-ink-400 dark:text-dark-textSubtle">
                 当前 .env.local 里已有 key（{keyStatus.length} 字符）
               </div>
             )}
