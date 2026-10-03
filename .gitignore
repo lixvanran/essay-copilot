@@ -6,3 +6,8 @@ node_modules
 *.log
 out
 dist
+
+# E2E 测试产物
+test-results/
+playwright-report/
+playwright/.cache/
