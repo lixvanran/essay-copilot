@@ -145,6 +145,11 @@ export async function POST(req: NextRequest) {
       prediction = JSON.parse(m[0]);
     }
 
+    logger.info('predict-score success', {
+      model: data.model || 'moonshotai/kimi-k2',
+      totalScore: prediction?.totalScore,
+      durationMs: Date.now() - start
+    });
     return NextResponse.json({
       prediction,
       model: data.model || 'moonshotai/kimi-k2',

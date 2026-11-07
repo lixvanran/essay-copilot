@@ -8,9 +8,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildSystemPrompt } from '@/lib/prompts';
 import type { StyleDNA } from '@/lib/style-dna';
+import { validateDNA } from '@/lib/style-dna';
 import type { StyleProfile } from '@/lib/style-extractor';
 import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
+import { detectInjection } from '@/lib/sanitize';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -61,7 +63,43 @@ export async function POST(req: NextRequest) {
     const model: string = body.model || 'moonshotai/kimi-k2';
 
     if (!dna || !outline?.paragraphs?.length) {
+    // v0.6.1：dna 结构校验（客户端可能传裁剪过的旧 schema）
+    const dnaCheck = validateDNA(dna);
+    if (!dnaCheck.ok) {
+      logger.warn('outline-to-essay: invalid dna', { missing: dnaCheck.missing });
+      return NextResponse.json(
+        { error: `dna 结构不完整（缺少 ${dnaCheck.missing.join(', ')}），请重新上传范文` },
+        { status: 400 }
+      );
+    }
+
       return NextResponse.json({ error: 'dna and outline.paragraphs required' }, { status: 400 });
+    }
+
+    // v0.6.1 安全：prompt injection 检测 + 大纲体积上限
+    if (topic) {
+      const check = detectInjection(topic, { maxLength: 200, maxLineBreaks: 20 });
+      if (check.suspicious) {
+        logger.warn('outline-to-essay: suspicious topic', { reasons: check.reasons });
+        return NextResponse.json(
+          { error: `题目包含可疑内容：${check.reasons.join('; ')}` },
+          { status: 400 }
+        );
+      }
+    }
+    if (requirements) {
+      const check = detectInjection(requirements, { maxLength: 2000, maxLineBreaks: 50 });
+      if (check.suspicious) {
+        logger.warn('outline-to-essay: suspicious requirements', { reasons: check.reasons });
+        return NextResponse.json(
+          { error: `额外要求包含可疑内容：${check.reasons.join('; ')}` },
+          { status: 400 }
+        );
+      }
+    }
+    // 大纲是 LLM 生成的 JSON，整体也做长度限制（防撑爆 context）
+    if (JSON.stringify(outline).length > 20000) {
+      return NextResponse.json({ error: '大纲过长（> 20000 字符）' }, { status: 400 });
     }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
@@ -107,6 +145,10 @@ export async function POST(req: NextRequest) {
     const essay = data.choices?.[0]?.message?.content?.trim();
     if (!essay) throw new Error('Empty response');
 
+    logger.info('outline-to-essay success', {
+      model: data.model || model,
+      durationMs: Date.now() - start
+    });
     return NextResponse.json({
       essay: essay.replace(/^["「『]+|["」』]+$/g, '').trim(),
       model: data.model || model,

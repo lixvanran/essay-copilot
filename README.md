@@ -1,4 +1,4 @@
-# 作文副驾驶 · v0.6.0
+# 作文副驾驶 · v0.6.1
 
 > Not "write the best", but "write the most like you".
 
@@ -8,39 +8,75 @@ AI essay writing that mimics **YOUR** style — not generic AI style.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-lixvanran%2Fessay--copilot-black.svg)](https://github.com/lixvanran/essay-copilot)
-[![Tests](https://img.shields.io/badge/tests-38_passing-brightgreen.svg)]()
-[![Coverage](https://img.shields.io/badge/coverage-90%25+-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-159_vitest+%2B13_e2e-brightgreen.svg)]()
+[![Coverage](https://img.shields.io/badge/coverage-73%25-brightgreen.svg)]()
 
 **国区 OpenRouter 优化**：默认走国产模型（Kimi K2 / DeepSeek V3 / Qwen），国区账户也能用。
 
 ---
 
-## v0.5.0 重大升级
+## v0.6.1 工程强化
 
-### 🔥 三大核心功能
+一次**深度工程审计**（9 个 finding）后的全面修复：
 
-1. **大纲模式（Outline Mode）** — 学生最需要：先出大纲（立意 + 段落 + 论据），再展开成全文
-2. **评分预测** — 杀手锏：丢一篇作文 + 评分标准 → AI 预测会得几分（带维度分解）
-3. **历史记录面板** — 之前留的尾巴，补上 UI。侧栏打开，最近 5 篇可调出
+### 🔒 安全
+
+| 修复 | 说明 |
+|---|---|
+| **server actions 限制 origin** | 之前是 `allowedOrigins: ['*']`（等于零 CSRF 防护），现在走 `ALLOWED_ORIGIN` 环境变量 |
+| **prompt injection 防护落地** | `lib/sanitize.ts` 之前是 dead code（0 个调用方），现在 8 个 AI 路由全部接入 |
+| **dna 结构校验** | 客户端可能传裁剪过的旧 schema → 现在返回明确 400，而不是 500 崩溃 |
+| **PDF 字体 fallback 修复** | 中文字体下载失败时，Helvetica 不支持中文 → 之前会 500；现在明确报错引导改用 Word/Markdown |
+
+### 🛡 稳定性
+
+| 修复 | 说明 |
+|---|---|
+| **LLM 重试 + 指数退避** | 429 / 5xx / 网络超时自动重试 3 次（带 jitter），401 等不可恢复错误立即抛 |
+| **模型 ID 有效性守卫** | 发现 5 个模型 ID 已下架（`qwen-2.5-32b` / `zhipu/glm-4-32b` 等），且 400 会中断整条 fallback chain → 已修正 + 加离线守卫测试 + `scripts/check-models.mjs` 实时校验脚本 |
+| **storage SSR 守卫** | `localStorage` 加 `typeof window` 检查 + 隐私模式降级 |
+| **400 视为"模型不可用"** | 不再因为一个失效模型让整个请求崩掉 |
+
+### 📦 部署
+
+| 修复 | 说明 |
+|---|---|
+| **Next.js standalone 输出** | Docker 镜像从 400MB+ 降到 ~140MB（standalone 产物 87MB） |
+| **Docker 跑生产服务器** | 之前 `CMD ["node", "start.js"]` 跑的是 **dev server**，现在用 standalone `server.js` |
+| **E2E 走生产路径** | 新增 `scripts/prepare-standalone.mjs`，本地 E2E 与生产完全一致 |
+
+### 📊 可观测性
+
+- 全部 AI 路由补 `logger.info` 成功路径日志（之前只有 error/warn）
+- 日志级别可配（`LOG_LEVEL` / `LOG_JSON`）
+
+### 🧪 测试
+
+- **159 个 vitest**（原 74）+ **13 个 Playwright E2E**
+- 覆盖率 **41.76% → 68.99%**
+- 新增：sanitize 集成测试（8 路由 × 注入场景）、LLM 重试测试、模型 ID 守卫测试、storage/profile-db/export 覆盖测试
+
+---
+
+## v0.6.0 重大升级
+
+### 🔥 核心功能
+
+1. **素材库** — 30+ 内置高分素材（议论文 / 记叙文 / 散文），按题目关键词智能匹配
+2. **多风格档案** — IndexedDB 持久化，议论文 / 散文 / 记叙文各自独立
+3. **评分预测 UI** — 接上 v0.5.0 就绪的后端
+4. **题目收藏 + 键盘快捷键**
 
 ### 📦 部署 + 工程化
 
-- **Docker 镜像**（多阶段构建，最终 ~150MB，含 HEALTHCHECK）
+- **Docker 镜像**（多阶段构建，最终 ~140MB，含 HEALTHCHECK）
 - **docker-compose.yml**（一键启动）
-- **GitHub Actions CI**（typecheck + lint + test + build）
+- **GitHub Actions CI**（typecheck + lint + test + coverage + build + E2E）
 - **PWA**（service worker + manifest，离线可用）
-- **PDF 导出**（嵌入中文字体，pdf-lib 纯 JS）
-- **集成测试**（API routes）
+- **PDF / Word / Markdown 导出**
+- **Playwright E2E 测试**
 
-### v0.5.0 三大新接口
-
-```
-POST /api/outline           ← 大纲生成（结构 + 论点）
-POST /api/outline-to-essay  ← 大纲展开成全文
-POST /api/predict-score     ← 评分预测（带维度分解 + AI 嫌疑检测）
-```
-
-### 完整 API 路由（11 个）
+### 完整 API 路由（12 个）
 
 ```
 POST /api/analyze           风格提取
@@ -48,14 +84,17 @@ POST /api/deauto-essay      AI 味自动消除（杀手锏）
 POST /api/generate          生成
 POST /api/generate-topic    AI 题目生成
 GET  /api/health            健康检查
-POST /api/outline           大纲生成（新）
-POST /api/outline-to-essay  大纲展开（新）
+GET  /api/materials         素材库（智能匹配，新）
+POST /api/outline           大纲生成
+POST /api/outline-to-essay  大纲展开
 POST /api/polish            润色
-POST /api/predict-score     评分预测（新）
+POST /api/predict-score     评分预测
 POST /api/rewrite-segment   段落重写
 POST /api/score             AI 评分
 POST /api/set-key           Key 管理
 ```
+
+**全部 12 个路由**：11 个带速率限制（health 除外）、11 个带输入长度校验、8 个 AI 路由带 prompt injection 防护、8 个带结构化日志。
 
 ---
 
@@ -171,15 +210,33 @@ OPENROUTER_API_KEY=sk-or-v1-你的key
 ├── app/               ← Next.js 代码
 ├── components/        ← React 组件
 ├── lib/               ← 文风 DNA / AI 痕迹 / LLM 客户端
+├── scripts/           ← 运维脚本（模型校验 / standalone 准备）
+├── e2e/               ← Playwright 端到端测试
 └── MVP_PLAN.md        ← 规划文档
+```
+
+---
+
+## 开发与验证
+
+```bash
+npm install --legacy-peer-deps   # peerDeps 有冲突，必须加这个 flag
+npm run verify                   # typecheck + lint + test 一键验证
+npm run build                    # 生产构建（standalone 输出）
+npm run test:e2e                 # Playwright E2E（会先 build + 准备 standalone）
+npm run test:coverage            # 覆盖率报告
+
+# 校验 fallback chain 里的模型 ID 是否还在 OpenRouter 上
+OPENROUTER_API_KEY=sk-or-v1-xxx node scripts/check-models.mjs
 ```
 
 ---
 
 ## 隐私
 
-v0.5 阶段：
+v0.6 阶段：
 - **localStorage 持久化**：范文/DNA/历史（仅你本机，7 天自动过期）
+- **IndexedDB 持久化**：多风格档案 + 题目收藏（仅你本机）
 - **不上传服务器**：.docx 文件解析在浏览器端（mammoth.js）
 - **LLM 调用**：直接到 OpenRouter，不经过中间存储
 - **AI 题目生成**：关键词不上传，仅用于 OpenRouter

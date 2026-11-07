@@ -21,9 +21,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { StyleDNA } from '@/lib/style-dna';
+import { validateDNA } from '@/lib/style-dna';
 import type { StyleProfile } from '@/lib/style-extractor';
 import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
+import { detectInjection } from '@/lib/sanitize';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -89,8 +91,27 @@ export async function POST(req: NextRequest) {
     const model: string = body.model || 'moonshotai/kimi-k2';
 
     if (!dna) return NextResponse.json({ error: 'dna required' }, { status: 400 });
+    // v0.6.1：dna 结构校验（客户端可能传裁剪过的旧 schema）
+    const dnaCheck = validateDNA(dna);
+    if (!dnaCheck.ok) {
+      logger.warn('outline: invalid dna', { missing: dnaCheck.missing });
+      return NextResponse.json(
+        { error: `dna 结构不完整（缺少 ${dnaCheck.missing.join(', ')}），请重新上传范文` },
+        { status: 400 }
+      );
+    }
+
     if (!topic || topic.length > 200) {
       return NextResponse.json({ error: 'topic 必填且 ≤ 200 字' }, { status: 400 });
+    }
+    // v0.6.1 安全：prompt injection 检测
+    const topicCheck = detectInjection(topic, { maxLength: 200, maxLineBreaks: 20 });
+    if (topicCheck.suspicious) {
+      logger.warn('outline: suspicious topic', { reasons: topicCheck.reasons });
+      return NextResponse.json(
+        { error: `题目包含可疑内容：${topicCheck.reasons.join('; ')}` },
+        { status: 400 }
+      );
     }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
@@ -156,6 +177,11 @@ export async function POST(req: NextRequest) {
       throw new Error('Incomplete outline');
     }
 
+    logger.info('outline success', {
+      model: data.model || model,
+      paragraphs: outline.paragraphs?.length ?? 0,
+      durationMs: Date.now() - start
+    });
     return NextResponse.json({
       outline,
       model: data.model || model,

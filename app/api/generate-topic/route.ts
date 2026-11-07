@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
+import { detectInjection } from '@/lib/sanitize';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -57,6 +58,15 @@ export async function POST(req: NextRequest) {
     if (keywords.length > 200) {
       return NextResponse.json({ error: '关键词太长（< 200 字）' }, { status: 400 });
     }
+    // v0.6.1 安全：prompt injection 检测（keywords 直接进 prompt）
+    const kwCheck = detectInjection(keywords, { maxLength: 200, maxLineBreaks: 20 });
+    if (kwCheck.suspicious) {
+      logger.warn('generate-topic: suspicious keywords', { reasons: kwCheck.reasons });
+      return NextResponse.json(
+        { error: `关键词包含可疑内容：${kwCheck.reasons.join('; ')}` },
+        { status: 400 }
+      );
+    }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) return NextResponse.json({ error: 'OPENROUTER_API_KEY not configured' }, { status: 500 });
@@ -103,6 +113,11 @@ export async function POST(req: NextRequest) {
       parsed = JSON.parse(m[0]);
     }
 
+    logger.info('generate-topic success', {
+      model: data.model || 'qwen/qwen-2.5-14b-instruct',
+      count: parsed.topics?.length ?? 0,
+      durationMs: Date.now() - start
+    });
     return NextResponse.json({
       topics: parsed.topics || [],
       model: data.model || 'qwen/qwen-2.5-14b-instruct',

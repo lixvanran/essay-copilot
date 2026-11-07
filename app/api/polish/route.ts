@@ -11,9 +11,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildSystemPrompt } from '@/lib/prompts';
 import type { StyleDNA } from '@/lib/style-dna';
+import { validateDNA } from '@/lib/style-dna';
 import type { StyleProfile } from '@/lib/style-extractor';
 import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
+import { detectInjection } from '@/lib/sanitize';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
@@ -66,10 +68,45 @@ export async function POST(req: NextRequest) {
     const model: string = body.model || 'moonshotai/kimi-k2';
 
     if (!dna || !essay || essay.trim().length < 100) {
+    // v0.6.1：dna 结构校验（客户端可能传裁剪过的旧 schema）
+    const dnaCheck = validateDNA(dna);
+    if (!dnaCheck.ok) {
+      logger.warn('polish: invalid dna', { missing: dnaCheck.missing });
+      return NextResponse.json(
+        { error: `dna 结构不完整（缺少 ${dnaCheck.missing.join(', ')}），请重新上传范文` },
+        { status: 400 }
+      );
+    }
+
       return NextResponse.json({ error: 'dna 和 essay 必填，essay 至少 100 字' }, { status: 400 });
     }
     if (essay.length > 10000) {
       return NextResponse.json({ error: 'essay 不能超过 10000 字' }, { status: 400 });
+    }
+
+    // v0.6.1 安全：prompt injection 检测
+    // strict=false —— 作文是学生自己写的，可能引用英文对话，不误伤
+    const essayCheck = detectInjection(essay, {
+      maxLength: 10000,
+      maxLineBreaks: 200,
+      strict: false
+    });
+    if (essayCheck.suspicious) {
+      logger.warn('polish: suspicious essay', { reasons: essayCheck.reasons });
+      return NextResponse.json(
+        { error: `作文包含可疑内容：${essayCheck.reasons.join('; ')}` },
+        { status: 400 }
+      );
+    }
+    if (userInstruction) {
+      const insCheck = detectInjection(userInstruction, { maxLength: 2000, maxLineBreaks: 50 });
+      if (insCheck.suspicious) {
+        logger.warn('polish: suspicious instruction', { reasons: insCheck.reasons });
+        return NextResponse.json(
+          { error: `用户指令包含可疑内容：${insCheck.reasons.join('; ')}` },
+          { status: 400 }
+        );
+      }
     }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
@@ -116,6 +153,10 @@ export async function POST(req: NextRequest) {
     polished = polished.replace(/^["「『]+|["」』]+$/g, '').trim();
     if (!polished) throw new Error('Empty response from LLM');
 
+    logger.info('polish success', {
+      model: data.model || model,
+      durationMs: Date.now() - start
+    });
     return NextResponse.json({
       essay: polished,
       model: data.model || model,

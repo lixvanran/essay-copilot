@@ -1,5 +1,5 @@
 /**
- * Service Worker（v0.5.0 PWA）
+ * Service Worker（v0.5.0 PWA，v0.6.1 缓存版本对齐）
  *
  * 策略：
  *  - 字体/图片：cache-first（永久）
@@ -7,7 +7,7 @@
  *  - 页面：network-first，失败回退到缓存
  */
 
-const CACHE_VERSION = 'essay-copilot-v0.5.0';
+const CACHE_VERSION = 'essay-copilot-v0.6.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 const PRE_CACHE_URLS = [

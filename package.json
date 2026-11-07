@@ -1,12 +1,13 @@
 {
   "name": "zuowen-copilot",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "start:e2e": "next start -p 3000",
+    "prestart:e2e": "node scripts/prepare-standalone.mjs",
+    "start:e2e": "node .next/standalone/server.js",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
@@ -24,7 +25,7 @@
     "docx": "^9.7.1",
     "jieba-wasm": "^2.4.0",
     "mammoth": "^1.12.3",
-    "next": "^15.5.27",
+    "next": "^15.5.29",
     "pdf-lib": "^1.17.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -36,21 +37,25 @@
     "@types/node": "^20.14.10",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitest/coverage-v8": "^2.1.9",
-    "@vitest/ui": "^2.1.9",
+    "@vitest/coverage-v8": "^4.1.12",
+    "@vitest/ui": "^4.1.12",
     "autoprefixer": "^10.4.19",
     "braces": "^3.0.3",
     "eslint": "^8.57.1",
     "eslint-config-next": "^15.5.27",
     "eslint-config-prettier": "^10.1.8",
+    "fake-indexeddb": "^6.2.7",
     "postcss": "^8.5.28",
     "prettier": "^3.9.9",
     "tailwindcss": "^3.4.6",
     "typescript": "^5.5.3",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.12"
   },
   "overrides": {
     "postcss": "^8.5.28",
-    "braces": "^3.0.3"
+    "braces": "^3.0.3",
+    "tinypool": "^2.2.0",
+    "postcss-selector-parser": "^7.1.7",
+    "minimatch": "^11.0.5"
   }
 }

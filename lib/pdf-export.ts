@@ -46,13 +46,24 @@ export type EssayPdfOptions = {
 export async function essayToPdf(opts: EssayPdfOptions): Promise<Blob> {
   const pdf = await PDFDocument.create();
   pdf.setTitle(opts.title || opts.topic || '生成的作文');
-  pdf.setCreator('Essay Co-Pilot v0.5.0');
+  pdf.setCreator('Essay Co-Pilot v0.6.1');
   pdf.setProducer('pdf-lib');
 
   // 字体
   const cnFont = await getChineseFont(pdf);
   const fallbackFont = await pdf.embedFont(StandardFonts.Helvetica);
   const font = cnFont || fallbackFont;
+
+  // ⚠️ v0.6.1 修复：Helvetica 是 WinAnsi 编码，不支持中文字符。
+  //   旧代码在字体下载失败时直接用 Helvetica 渲染中文 →
+  //   drawText 抛 "Cannot encode" → 整个 PDF 导出 500（fallback 路径本身是坏的）。
+  //   ⇒ 现在：没有中文字体 + 内容含中文 → 明确报错，让用户改用 Word/Markdown 导出。
+  if (!cnFont && containsChinese(opts.essay) || (!cnFont && containsChinese(opts.title || opts.topic || ''))) {
+    throw new Error(
+      '中文字体加载失败（需要能访问 cdn.jsdelivr.net 下载 NotoSansSC）。' +
+      '请检查网络后重试，或改用「导出 Word」/「导出 Markdown」。'
+    );
+  }
 
   // 页面设置
   const pageWidth = 595;   // A4
@@ -119,14 +130,19 @@ export async function essayToPdf(opts: EssayPdfOptions): Promise<Blob> {
         page = pdf.addPage([pageWidth, pageHeight]);
         y = pageHeight - margin;
       }
-      page.drawText(line, {
-        x: margin,
-        y: y,
-        size: fontSize,
-        font,
-        color: rgb(0.15, 0.15, 0.15),
-        maxWidth
-      });
+      // 安全网：即使前面的中文检测漏了，也不让单个字符炸掉整个导出
+      try {
+        page.drawText(line, {
+          x: margin,
+          y: y,
+          size: fontSize,
+          font,
+          color: rgb(0.15, 0.15, 0.15),
+          maxWidth
+        });
+      } catch (e) {
+        console.warn('[pdf-export] skip unencodable line:', e);
+      }
       y -= lineHeight;
     }
 
@@ -156,6 +172,13 @@ export async function downloadPdf(opts: EssayPdfOptions, filename?: string) {
   a.download = filename || `essay-${Date.now()}.pdf`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * 判断文本是否含中日韩字符（fallback 字体不支持）
+ */
+function containsChinese(text: string): boolean {
+  return /[　-鿿＀-￯]/.test(text);
 }
 
 /**

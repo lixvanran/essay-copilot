@@ -3,6 +3,7 @@ import { extractStyleDNA } from '@/lib/style-dna';
 import { extractStyleProfile } from '@/lib/style-extractor';
 import { checkRateLimit, RATE_LIMITS, getClientIP, rateLimitHeaders } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
+import { detectInjection } from '@/lib/sanitize';
 
 export async function POST(req: NextRequest) {
   const ip = getClientIP(req);
@@ -33,6 +34,22 @@ export async function POST(req: NextRequest) {
     }
     if (samples.length > 10) {
       return NextResponse.json({ error: 'Maximum 10 samples' }, { status: 400 });
+    }
+    // v0.6.1 安全：prompt injection 检测
+    // strict=false —— 范文是学生自己写的，可能引用英文对话（"Assistant: ..."），不误伤
+    for (let i = 0; i < samples.length; i++) {
+      const check = detectInjection(samples[i], {
+        maxLength: 50000,
+        maxLineBreaks: 200,
+        strict: false
+      });
+      if (check.suspicious) {
+        logger.warn(`analyze: suspicious sample ${i}`, { reasons: check.reasons });
+        return NextResponse.json(
+          { error: `第 ${i + 1} 篇范文包含可疑内容：${check.reasons.join('; ')}` },
+          { status: 400 }
+        );
+      }
     }
 
     // 1. 规则量化 DNA

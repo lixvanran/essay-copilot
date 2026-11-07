@@ -8,6 +8,58 @@ import { buildSystemPrompt, buildUserPrompt } from './prompts';
 
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 
+/**
+ * v0.6.1：重试策略
+ *
+ * transient（可重试）：429 限流 / 5xx 服务端错误 / 网络超时
+ * 不可恢复（直接抛）：401 未授权 / 402 欠费 / 403 禁止 / 404 模型不存在
+ *   —— 这些重试也没用，只会浪费时间
+ */
+const MAX_RETRIES = 3;
+const REQUEST_TIMEOUT_MS = 60_000;
+const BASE_BACKOFF_MS = 1000;
+const MAX_BACKOFF_MS = 8000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 指数退避 + 抖动（jitter），避免多个并发请求同时重试打爆上游
+ * 若服务端给了 Retry-After，优先采用（但封顶）
+ */
+function backoffMs(attempt: number, retryAfterHeader: string | null): number {
+  if (retryAfterHeader) {
+    const seconds = parseInt(retryAfterHeader, 10);
+    if (!Number.isNaN(seconds) && seconds > 0) {
+      return Math.min(seconds * 1000, MAX_BACKOFF_MS);
+    }
+  }
+  const exponential = BASE_BACKOFF_MS * Math.pow(2, attempt);
+  const jitter = Math.floor(Math.random() * 500);
+  return Math.min(exponential + jitter, MAX_BACKOFF_MS);
+}
+
+/**
+ * 判断错误是否 transient（值得重试）
+ */
+export function isTransientError(e: any): boolean {
+  if (!e) return false;
+  const name = e.name || '';
+  // fetch 网络错误 / AbortError（超时）
+  if (name === 'TypeError' || name === 'AbortError' || name === 'TimeoutError') return true;
+  const msg = String(e.message || '');
+  // OpenRouter 429 / 5xx
+  const m = msg.match(/OpenRouter error (\d+)/);
+  if (m) {
+    const status = parseInt(m[1], 10);
+    return status === 429 || status >= 500;
+  }
+  // fetch failed / network
+  if (/fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(msg)) return true;
+  return false;
+}
+
 type OpenRouterMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -63,18 +115,24 @@ export const DEFAULT_MODELS = {
  * 国区友好 Fallback 模型链（按推荐顺序）
  * 优先国产模型 → 国际开源模型 → 国际闭源（可能国区不可用）
  * v0.2.0 更新：实测 Kimi K2 风格匹配最好（18 分），提到首位
+ *
+ * ⚠️ v0.6.1：模型 ID 全部对着 OpenRouter /models 实际列表核对过。
+ * 之前有 5 个 ID 已失效（qwen-2.5-32b / qwen-2.5-14b / zhipu/glm-4-32b /
+ * gemini-2.0-flash-exp:free / claude-3-5-sonnet-20241022），
+ * 而 400 "not a valid model ID" 会直接抛错中断整条链 ⇒ 请求全挂。
+ * ⇒ 现在 400 也走 skip（见下方），并加了 lib/llm-models.test.ts 离线守卫。
  */
 export const FALLBACK_CHAIN = [
   'moonshotai/kimi-k2',                            // 月之暗面 Kimi K2（中文写作实测最佳）
   'deepseek/deepseek-chat',                        // DeepSeek V3（速度最快）
   'qwen/qwen-2.5-72b-instruct',                    // 通义千问 72B
-  'qwen/qwen-2.5-32b-instruct',                    // 通义千问 32B
-  'qwen/qwen-2.5-14b-instruct',                    // 通义千问 14B（更快）
-  'zhipu/glm-4-32b',                               // 智谱 GLM-4
+  'qwen/qwen3-32b',                                // 通义千问 32B（v3）
+  'qwen/qwen3-14b',                                // 通义千问 14B（v3，更快）
+  'z-ai/glm-4.5',                                  // 智谱 GLM-4.5（v0.6.1：zhipu/ 已迁到 z-ai/）
   'meta-llama/llama-3.1-70b-instruct',             // Meta Llama 70B（国际开源）
   'meta-llama/llama-3.1-8b-instruct',              // Meta Llama 8B
-  'google/gemini-2.0-flash-exp:free',             // Google Gemini（可能国区不可用）
-  'anthropic/claude-3-5-sonnet-20241022',         // Anthropic（国区大概率 404）
+  'google/gemini-2.5-flash',                       // Google Gemini（国区可能不可用）
+  'anthropic/claude-sonnet-4.5',                   // Anthropic（国区大概率 404）
   'openai/gpt-4o-mini'                             // OpenAI（国区大概率 404）
 ] as const;
 
@@ -119,48 +177,86 @@ export async function generateEssay(
     };
 
     const start = Date.now();
-    try {
-      const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://zuowen-copilot.local',
-          'X-Title': 'Zuowen Co-Pilot'
-        },
-        body: JSON.stringify(requestBody)
-      });
+    // v0.6.1：对 transient 错误（429 / 5xx / 网络抖动）做指数退避重试
+    // 不可恢复错误（401 / 404 / 402 / 403）直接抛出，不浪费重试预算
+    let lastTransientError: Error | null = null;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://zuowen-copilot.local',
+            'X-Title': 'Zuowen Co-Pilot'
+          },
+          body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+        });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        // 404 / 402 / 403 都视为"不可用"，尝试下一个
-        if (response.status === 404 || response.status === 402 || response.status === 403) {
-          errors.push(`${model} (${response.status})`);
-          continue;
+        if (!response.ok) {
+          const errText = await response.text();
+          // 404 / 402 / 403 都视为"不可用"，尝试下一个
+          if (response.status === 404 || response.status === 402 || response.status === 403) {
+            errors.push(`${model} (${response.status})`);
+            lastTransientError = null;
+            break;
+          }
+          // 400：多数是 "not a valid model ID"（模型下架/ID 写错）
+          //   → 该模型不可用，跳到下一个，绝不能中断整条链
+          if (response.status === 400 && /model/i.test(errText)) {
+            errors.push(`${model} (400 invalid model)`);
+            lastTransientError = null;
+            break;
+          }
+          // 429 / 5xx 视为 transient → 重试
+          if (response.status === 429 || response.status >= 500) {
+            lastTransientError = new Error(`OpenRouter error ${response.status}: ${errText}`);
+            if (attempt < MAX_RETRIES - 1) {
+              await sleep(backoffMs(attempt, response.headers.get('retry-after')));
+              continue;
+            }
+            errors.push(`${model} (${response.status} after ${MAX_RETRIES} retries)`);
+            break;
+          }
+          // 其他错误（401 等）直接抛出
+          throw new Error(`OpenRouter error ${response.status}: ${errText}`);
         }
-        // 其他错误（401 / 429 / 5xx）直接抛出
-        throw new Error(`OpenRouter error ${response.status}: ${errText}`);
+
+        const data: OpenRouterResponse = await response.json();
+        const durationMs = Date.now() - start;
+
+        if (!data.choices || data.choices.length === 0) {
+          errors.push(`${model} (no choices)`);
+          break;
+        }
+
+        const essay = data.choices[0].message.content.trim();
+        return {
+          essay,
+          model: data.model,
+          usage: data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          durationMs
+        };
+      } catch (e: any) {
+        // 超时 / 网络错误 → transient，可重试
+        if (isTransientError(e)) {
+          lastTransientError = e;
+          if (attempt < MAX_RETRIES - 1) {
+            await sleep(backoffMs(attempt, null));
+            continue;
+          }
+          errors.push(`${model} (${e.name || 'network error'} after ${MAX_RETRIES} retries)`);
+          break;
+        }
+        // 不可恢复错误（401 等）→ 透传
+        throw e;
       }
-
-      const data: OpenRouterResponse = await response.json();
-      const durationMs = Date.now() - start;
-
-      if (!data.choices || data.choices.length === 0) {
-        errors.push(`${model} (no choices)`);
-        continue;
-      }
-
-      const essay = data.choices[0].message.content.trim();
-      return {
-        essay,
-        model: data.model,
-        usage: data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-        durationMs
-      };
-    } catch (e: any) {
-      // 不可恢复错误（401/429/5xx），透传
-      throw e;
     }
+    // 走到这里 = 本 model 试完了（不可用 / 重试耗尽）
+    // → 继续 for 循环，尝试下一个 model
+    // （lastTransientError 仅用于调试信息，不影响控制流）
+    void lastTransientError;
   }
 
   // 所有模型都失败

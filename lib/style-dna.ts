@@ -530,74 +530,84 @@ export function extractStyleDNA(samples: string[]): StyleDNA {
 export function dnaToStyleDescription(dna: StyleDNA): string {
   const lines: string[] = [];
 
+  // v0.6.1 防御：dna 可能来自客户端（可能被裁剪/篡改），缺字段不能崩
+  const vp = dna.viewpoint ?? ({} as StyleDNA['viewpoint']);
+  const sp = dna.sentencePatterns ?? ({} as StyleDNA['sentencePatterns']);
+  const rd = dna.rhetoricalDevices ?? ({} as StyleDNA['rhetoricalDevices']);
+  const punct = dna.punctuation ?? ({} as StyleDNA['punctuation']);
+  const rhythm = dna.rhythm ?? ({} as StyleDNA['rhythm']);
+  const dist = dna.sentenceLenDist ?? { short: 0, medium: 0, long: 0 };
+  const templates = dna.topSentenceTemplates ?? [];
+  const particles = dna.modalParticles ?? [];
+  const connectives = dna.topConnectives ?? [];
+
   lines.push('# 用户的语言习惯档案（HOW，不是 WHAT）');
   lines.push('');
 
   // 视角
-  const vp = dna.viewpoint;
   const vpDesc = [];
-  if (vp.firstPersonRatio > 0.01) vpDesc.push(`第一人称代入强（"我"出现 ${(vp.firstPersonRatio * 100).toFixed(1)}%）`);
-  else if (vp.firstPersonRatio < 0.003) vpDesc.push('几乎不用第一人称（旁观者视角）');
-  if (vp.thirdPersonRatio > 0.005) vpDesc.push(`第三人称叙述多（"他/她"${(vp.thirdPersonRatio * 100).toFixed(1)}%）`);
-  if (vp.secondPersonRatio > 0.005) vpDesc.push(`第二人称对话多（"你"${(vp.secondPersonRatio * 100).toFixed(1)}%）`);
+  if ((vp.firstPersonRatio ?? 0) > 0.01) vpDesc.push(`第一人称代入强（"我"出现 ${(vp.firstPersonRatio * 100).toFixed(1)}%）`);
+  else if ((vp.firstPersonRatio ?? 0) < 0.003) vpDesc.push('几乎不用第一人称（旁观者视角）');
+  if ((vp.thirdPersonRatio ?? 0) > 0.005) vpDesc.push(`第三人称叙述多（"他/她"${(vp.thirdPersonRatio * 100).toFixed(1)}%）`);
+  if ((vp.secondPersonRatio ?? 0) > 0.005) vpDesc.push(`第二人称对话多（"你"${(vp.secondPersonRatio * 100).toFixed(1)}%）`);
   if (vpDesc.length > 0) lines.push(`- 视角：${vpDesc.join('，')}`);
-  if (dna.dialogueRatio > 0.05) lines.push(`- 对话密度高（${(dna.dialogueRatio * 100).toFixed(1)}% 的字符是对话）`);
+  if ((dna.dialogueRatio ?? 0) > 0.05) lines.push(`- 对话密度高（${(dna.dialogueRatio * 100).toFixed(1)}% 的字符是对话）`);
 
   // 句式
-  const sp = dna.sentencePatterns;
   const spDesc = [];
-  if (sp.parallelRatio > 0.1) spDesc.push('爱用排比');
-  if (sp.contrastRatio > 0.05) spDesc.push('爱用对比（"不是X而是Y"）');
-  if (sp.rhetoricalQuestionRatio > 0.05) spDesc.push('爱用反问');
-  if (sp.exclamatoryRatio > 0.05) spDesc.push('爱用感叹');
-  if (sp.progressiveRatio > 0.05) spDesc.push('爱用渐进句式（"X着X着""越X越Y"）');
+  if ((sp.parallelRatio ?? 0) > 0.1) spDesc.push('爱用排比');
+  if ((sp.contrastRatio ?? 0) > 0.05) spDesc.push('爱用对比（"不是X而是Y"）');
+  if ((sp.rhetoricalQuestionRatio ?? 0) > 0.05) spDesc.push('爱用反问');
+  if ((sp.exclamatoryRatio ?? 0) > 0.05) spDesc.push('爱用感叹');
+  if ((sp.progressiveRatio ?? 0) > 0.05) spDesc.push('爱用渐进句式（"X着X着""越X越Y"）');
   if (spDesc.length > 0) lines.push(`- 句式偏好：${spDesc.join('、')}`);
 
-  if (dna.topSentenceTemplates.length > 0) {
-    lines.push(`- 高复现句式模板：${dna.topSentenceTemplates.map(t => `"${t.pattern}"(${t.count}次)`).join('、')}`);
+  if (templates.length > 0) {
+    lines.push(`- 高复现句式模板：${templates.map(t => `"${t.pattern}"(${t.count}次)`).join('、')}`);
   }
 
   // 修辞
-  const rd = dna.rhetoricalDevices;
   const rdDesc = [];
-  if (rd.metaphor > 0) rdDesc.push(`比喻 ${rd.metaphor} 处`);
-  if (rd.personification > 0) rdDesc.push(`拟人 ${rd.personification} 处`);
-  if (rd.parallelism > 0) rdDesc.push(`排比 ${rd.parallelism} 处`);
+  if ((rd.metaphor ?? 0) > 0) rdDesc.push(`比喻 ${rd.metaphor} 处`);
+  if ((rd.personification ?? 0) > 0) rdDesc.push(`拟人 ${rd.personification} 处`);
+  if ((rd.parallelism ?? 0) > 0) rdDesc.push(`排比 ${rd.parallelism} 处`);
   if (rdDesc.length > 0) lines.push(`- 修辞：${rdDesc.join('、')}`);
 
   // 语气词
-  if (dna.modalParticles.length > 0) {
-    lines.push(`- 语气词习惯：${dna.modalParticles.map(p => `${p.word}×${p.count}`).join('、')}`);
+  if (particles.length > 0) {
+    lines.push(`- 语气词习惯：${particles.map(p => `${p.word}×${p.count}`).join('、')}`);
   }
 
   // 标点
   const punctDesc = [];
-  if (dna.punctuation.exclamation > 0.5) punctDesc.push(`感叹号 ${dna.punctuation.exclamation.toFixed(1)}/100字`);
-  if (dna.punctuation.question > 0.5) punctDesc.push(`问号 ${dna.punctuation.question.toFixed(1)}/100字`);
-  if (dna.punctuation.ellipsis > 0.3) punctDesc.push(`省略号 ${dna.punctuation.ellipsis.toFixed(1)}/100字`);
-  if (dna.punctuation.dash > 0.3) punctDesc.push(`破折号 ${dna.punctuation.dash.toFixed(1)}/100字`);
+  if ((punct.exclamation ?? 0) > 0.5) punctDesc.push(`感叹号 ${punct.exclamation.toFixed(1)}/100字`);
+  if ((punct.question ?? 0) > 0.5) punctDesc.push(`问号 ${punct.question.toFixed(1)}/100字`);
+  if ((punct.ellipsis ?? 0) > 0.3) punctDesc.push(`省略号 ${punct.ellipsis.toFixed(1)}/100字`);
+  if ((punct.dash ?? 0) > 0.3) punctDesc.push(`破折号 ${punct.dash.toFixed(1)}/100字`);
   if (punctDesc.length > 0) lines.push(`- 标点习惯：${punctDesc.join('、')}`);
 
   // 节奏
-  const dominant = Object.entries(dna.sentenceLenDist).sort((a, b) => b[1] - a[1])[0][0];
+  const dominant = Object.entries(dist).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'medium';
   const lenMap: Record<string, string> = {
     short: '短句为主，节奏急促',
     medium: '中句为主，节奏平稳',
     long: '长句为主，行文绵密'
   };
-  lines.push(`- 节奏：${lenMap[dominant]}`);
-  if (dna.rhythm.longShortAlternation > 0.3) lines.push(`- 长短句交替频繁（${(dna.rhythm.longShortAlternation * 100).toFixed(0)}% 相邻句长度差 > 50%）`);
-  if (dna.rhythm.sentenceVariability > 0.5) lines.push(`- 句长变化大（变异系数 ${dna.rhythm.sentenceVariability.toFixed(2)}）`);
+  lines.push(`- 节奏：${lenMap[dominant] ?? lenMap.medium}`);
+  if ((rhythm.longShortAlternation ?? 0) > 0.3) lines.push(`- 长短句交替频繁（${(rhythm.longShortAlternation * 100).toFixed(0)}% 相邻句长度差 > 50%）`);
+  if ((rhythm.sentenceVariability ?? 0) > 0.5) lines.push(`- 句长变化大（变异系数 ${rhythm.sentenceVariability.toFixed(2)}）`);
 
   // 语气
-  const toneLabel = dna.toneScore > 0.2 ? '偏感性，有温度' : dna.toneScore < -0.2 ? '偏理性，冷静克制' : '中性';
-  const formalityLabel = dna.formalityScore > 0.6 ? '偏书面，正式' : dna.formalityScore < 0.4 ? '偏口语，自然亲切' : '口语与书面之间';
+  const toneScore = dna.toneScore ?? 0;
+  const formalityScore = dna.formalityScore ?? 0.5;
+  const toneLabel = toneScore > 0.2 ? '偏感性，有温度' : toneScore < -0.2 ? '偏理性，冷静克制' : '中性';
+  const formalityLabel = formalityScore > 0.6 ? '偏书面，正式' : formalityScore < 0.4 ? '偏口语，自然亲切' : '口语与书面之间';
   lines.push(`- 语气温度：${toneLabel}`);
   lines.push(`- 正式度：${formalityLabel}`);
 
   // 连接词
-  if (dna.topConnectives.length > 0) {
-    lines.push(`- 常用连接词：${dna.topConnectives.slice(0, 5).map(c => c.word).join('、')}`);
+  if (connectives.length > 0) {
+    lines.push(`- 常用连接词：${connectives.slice(0, 5).map(c => c.word).join('、')}`);
   }
 
   // 高频功能词（jieba 词性标注 — v4 核心：用真实语言习惯，不用主题词）
@@ -608,8 +618,51 @@ export function dnaToStyleDescription(dna: StyleDNA): string {
 
   // 词汇丰富度（jieba 真实分词）
   if (dna.vocabDiversity) {
-    lines.push(`- 词汇丰富度：${dna.vocabRichness.toFixed(3)} (TTR) / ${dna.vocabDiversity.toFixed(1)} (Diversity)`);
+    lines.push(`- 词汇丰富度：${(dna.vocabRichness ?? 0).toFixed(3)} (TTR) / ${dna.vocabDiversity.toFixed(1)} (Diversity)`);
   }
 
   return lines.join('\n');
+}
+
+/**
+ * v0.6.1：校验客户端传来的 DNA 是否完整
+ *
+ * 背景：dna 由前端 localStorage / IndexedDB 读出后发到 API，
+ * 可能被裁剪（老版本 schema）、损坏、或被恶意构造。
+ * 缺字段会让 dnaToStyleDescription 抛 TypeError → 500。
+ * ⇒ 在 API 边界做一次结构校验，返回 400 而不是 500。
+ */
+export function validateDNA(dna: unknown): { ok: true } | { ok: false; missing: string[] } {
+  const required = [
+    'viewpoint',
+    'sentencePatterns',
+    'rhetoricalDevices',
+    'punctuation',
+    'rhythm',
+    'sentenceLenDist'
+  ];
+  const missing: string[] = [];
+
+  if (!dna || typeof dna !== 'object') {
+    return { ok: false, missing: ['<root>'] };
+  }
+  const d = dna as Record<string, unknown>;
+  for (const key of required) {
+    const v = d[key];
+    if (!v || typeof v !== 'object') missing.push(key);
+  }
+  // 关键数值字段必须存在且是数字
+  const numericKeys = ['toneScore', 'formalityScore', 'avgSentenceLen'];
+  for (const key of numericKeys) {
+    if (typeof d[key] !== 'number') missing.push(key);
+  }
+  // viewpoint 内必须有数值
+  const vp = d.viewpoint as Record<string, unknown> | undefined;
+  if (vp) {
+    for (const key of ['firstPersonRatio', 'secondPersonRatio', 'thirdPersonRatio']) {
+      if (typeof vp[key] !== 'number') missing.push(`viewpoint.${key}`);
+    }
+  }
+
+  return missing.length === 0 ? { ok: true } : { ok: false, missing };
 }

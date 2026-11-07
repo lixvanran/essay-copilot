@@ -55,6 +55,12 @@ jobs:
         env:
           OPENROUTER_API_KEY: sk-or-v1-ci-placeholder-key
 
+      - name: Check model IDs are still valid
+        run: node scripts/check-models.mjs
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        continue-on-error: true
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

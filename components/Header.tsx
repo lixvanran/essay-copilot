@@ -14,7 +14,7 @@ export default function Header({ onReset, onShowHistory, historyCount }: Props) 
           <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
             作文副驾驶
             <span className="text-ink-400 dark:text-dark-textSubtle font-normal text-sm">· Style Co-Pilot</span>
-            <span className="text-[10px] text-ink-400 dark:text-dark-textSubtle border border-ink-200 dark:border-dark-borderLight rounded px-1.5 py-0.5 font-mono">v0.6.0</span>
+            <span className="text-[10px] text-ink-400 dark:text-dark-textSubtle border border-ink-200 dark:border-dark-borderLight rounded px-1.5 py-0.5 font-mono">v0.6.1</span>
           </h1>
           <p className="text-xs text-ink-400 dark:text-dark-textSubtle mt-0.5">不是写得最好，而是写得最像你</p>
         </div>

@@ -43,11 +43,29 @@ function warnOnce(msg: string, error?: unknown) {
 }
 
 /**
+ * SSR 安全访问 localStorage
+ * - SSR（typeof window === 'undefined'）返回 null
+ * - 隐私模式 / 存储被禁用（setItem 抛错）返回 null
+ * 之后所有调用方都要处理 null（用 ?. 可选链）
+ */
+function safeStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const probe = '__essay_copilot_probe__';
+    window.localStorage.setItem(probe, '1');
+    window.localStorage.removeItem(probe);
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 保存当前分析结果
  */
 export function saveAnalysis(data: SavedAnalysis) {
   try {
-    localStorage.setItem(KEYS.analysis, JSON.stringify(data));
+    safeStorage()?.setItem(KEYS.analysis, JSON.stringify(data));
   } catch (e) {
     warnOnce('saveAnalysis failed — localStorage may be full or disabled', e);
   }
@@ -55,11 +73,11 @@ export function saveAnalysis(data: SavedAnalysis) {
 
 export function loadAnalysis(): SavedAnalysis | null {
   try {
-    const raw = localStorage.getItem(KEYS.analysis);
+    const raw = safeStorage()?.getItem(KEYS.analysis);
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (Date.now() - data.savedAt > 7 * 24 * 3600 * 1000) {
-      localStorage.removeItem(KEYS.analysis);
+      safeStorage()?.removeItem(KEYS.analysis);
       return null;
     }
     return data;
@@ -71,7 +89,7 @@ export function loadAnalysis(): SavedAnalysis | null {
 
 export function clearAnalysis() {
   try {
-    localStorage.removeItem(KEYS.analysis);
+    safeStorage()?.removeItem(KEYS.analysis);
   } catch (e) {
     warnOnce('clearAnalysis failed', e);
   }
@@ -82,7 +100,7 @@ export function clearAnalysis() {
  */
 export function loadHistory(): HistoryEntry[] {
   try {
-    const raw = localStorage.getItem(KEYS.history);
+    const raw = safeStorage()?.getItem(KEYS.history);
     if (!raw) return [];
     return JSON.parse(raw);
   } catch (e) {
@@ -95,7 +113,7 @@ export function addToHistory(entry: HistoryEntry) {
   try {
     const list = loadHistory();
     const updated = [entry, ...list.filter(e => e.id !== entry.id)].slice(0, 5);
-    localStorage.setItem(KEYS.history, JSON.stringify(updated));
+    safeStorage()?.setItem(KEYS.history, JSON.stringify(updated));
   } catch (e) {
     warnOnce('addToHistory failed', e);
   }
@@ -104,7 +122,7 @@ export function addToHistory(entry: HistoryEntry) {
 export function removeFromHistory(id: string) {
   try {
     const list = loadHistory().filter(e => e.id !== id);
-    localStorage.setItem(KEYS.history, JSON.stringify(list));
+    safeStorage()?.setItem(KEYS.history, JSON.stringify(list));
   } catch (e) {
     warnOnce('removeFromHistory failed', e);
   }
@@ -112,7 +130,7 @@ export function removeFromHistory(id: string) {
 
 export function clearHistory() {
   try {
-    localStorage.removeItem(KEYS.history);
+    safeStorage()?.removeItem(KEYS.history);
   } catch (e) {
     warnOnce('clearHistory failed', e);
   }
@@ -123,7 +141,7 @@ export function clearHistory() {
  */
 export function getPolishMode(): boolean {
   try {
-    return localStorage.getItem(KEYS.polish) === '1';
+    return safeStorage()?.getItem(KEYS.polish) === '1';
   } catch {
     return false;
   }
@@ -131,7 +149,7 @@ export function getPolishMode(): boolean {
 
 export function setPolishMode(v: boolean) {
   try {
-    localStorage.setItem(KEYS.polish, v ? '1' : '0');
+    safeStorage()?.setItem(KEYS.polish, v ? '1' : '0');
   } catch (e) {
     warnOnce('setPolishMode failed', e);
   }

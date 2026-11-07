@@ -38,7 +38,9 @@ export type FavoriteTopic = {
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDB(): Promise<IDBDatabase> {
-  if (typeof window === 'undefined') {
+  // v0.6.1：判断条件改为 "indexedDB 是否可用"，而不是 "window 是否存在"
+  // —— Node 测试环境（fake-indexeddb）没有 window 但有 indexedDB
+  if (typeof indexedDB === 'undefined') {
     return Promise.reject(new Error('IndexedDB only available in browser'));
   }
   if (dbPromise) return dbPromise;

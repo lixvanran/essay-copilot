@@ -46,9 +46,17 @@ export function buildSystemPrompt(dna: StyleDNA, profile?: StyleProfile | null):
   const profileSection = profile ? profileToPromptSection(profile) : '';
   const dnaSection = dnaToStyleDescription(dna);
 
-  const fewShot = dna.fingerprintParagraphs.length > 0
-    ? `\n# 风格参考片段（请严格模仿这段文字的口吻、句式、节奏、表达习惯）\n${dna.fingerprintParagraphs.map((p, i) => `【参考段落 ${i + 1}】\n${p}`).join('\n\n')}`
+  // v0.6.1 防御：dna 可能来自客户端（裁剪过的旧 schema），缺字段不能崩
+  const fingerprints = dna.fingerprintParagraphs ?? [];
+  const vp = dna.viewpoint ?? ({} as StyleDNA['viewpoint']);
+  const paragraphLenAvg = dna.paragraphLenAvg || 100;
+  const totalChars = dna.totalChars || 0;
+
+  const fewShot = fingerprints.length > 0
+    ? `\n# 风格参考片段（请严格模仿这段文字的口吻、句式、节奏、表达习惯）\n${fingerprints.map((p, i) => `【参考段落 ${i + 1}】\n${p}`).join('\n\n')}`
     : '';
+
+  const paragraphCount = Math.max(1, Math.round(totalChars / paragraphLenAvg));
 
   return `你是一位资深的中文写作陪练老师，正在帮一位学生写作文。
 
@@ -65,16 +73,16 @@ ${fewShot}
 ${NEGATIVE_LIST}
 
 # 写作要求
-1. 字数 ${dna.paragraphLenAvg > 200 ? '800-1000' : '600-800'} 字（按用户平均段落长度调整）
+1. 字数 ${paragraphLenAvg > 200 ? '800-1000' : '600-800'} 字（按用户平均段落长度调整）
 2. **严格遵循上述语言习惯**（结合 LLM 画像 + 规则 DNA）：
    - 情感基调：${profile?.emotionalTone || '按 DNA 推断'}
    - 声音人格：${profile?.voicePersonality || '按 DNA 推断'}
    - 标志性技巧：${profile?.signatureTechniques?.join(' / ') || '按 DNA 推断'}
-   - 视角：${dna.viewpoint.firstPersonRatio > 0.01 ? '保持第一人称代入' : dna.viewpoint.thirdPersonRatio > 0.005 ? '保持第三人称叙述' : '保持旁观者视角'}
+   - 视角：${(vp.firstPersonRatio ?? 0) > 0.01 ? '保持第一人称代入' : (vp.thirdPersonRatio ?? 0) > 0.005 ? '保持第三人称叙述' : '保持旁观者视角'}
 3. 像参考片段那样自然、有"人味"——像真人写的，不是 AI 写的
 4. 题目要求的内容必须完整覆盖，但表达方式要"个人化"
 5. 偶尔可以有不完美的句子，像真人写的那种
-6. 段落数量 ${Math.round(dna.totalChars / dna.paragraphLenAvg) - 1}-${Math.round(dna.totalChars / dna.paragraphLenAvg) + 1} 段
+6. 段落数量 ${paragraphCount - 1}-${paragraphCount + 1} 段
 7. **不要重复范文里的主题词**——主题随题目变，语言习惯跨题目复现
 ${profile?.avoidPatterns?.length ? '8. 严格避免：' + profile.avoidPatterns.join(' / ') : ''}`.trim();
 }

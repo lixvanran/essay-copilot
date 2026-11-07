@@ -5,8 +5,20 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // v0.6.1：standalone 输出 —— Docker 镜像不需要把 400MB node_modules 塞进去
+  // 产物：.next/standalone/ （含精简 node_modules）+ server.js
+  output: 'standalone',
   experimental: {
-    serverActions: { allowedOrigins: ['*'] }
+    // v0.6.1 修复：限制 server actions 的 origin（防 CSRF）
+    // 生产环境通过 ALLOWED_ORIGIN 环境变量注入（逗号分隔）
+    // 默认只允许本地开发端口
+    serverActions: {
+      allowedOrigins: process.env.ALLOWED_ORIGIN
+        ? process.env.ALLOWED_ORIGIN.split(',')
+            .map(s => s.trim())
+            .filter(Boolean)
+        : ['localhost:3000', '127.0.0.1:3000']
+    }
   },
 
   webpack: (config, { isServer }) => {

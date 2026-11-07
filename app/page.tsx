@@ -207,7 +207,7 @@ export default function Home() {
         </div>
       </main>
       <footer className="border-t border-ink-100 dark:border-dark-border py-4 text-center text-xs text-ink-400 dark:text-dark-textSubtle">
-        作文副驾驶 · v0.6 · 数据仅在本地浏览器，刷新即丢
+        作文副驾驶 · v0.6.1 · 数据仅在本地浏览器，刷新即丢
       </footer>
 
       {/* 历史记录侧栏 */}
