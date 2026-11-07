@@ -11,3 +11,6 @@ dist
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Git 凭证助手（本地临时，不应提交）
+.git-askpass.sh
